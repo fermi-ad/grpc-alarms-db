@@ -51,8 +51,8 @@ async fn start_server<T: DataRow + 'static>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tokio::time::timeout;
     use std::time::Duration;
+    use tokio::time::timeout;
     struct TestRow;
     impl DataRow for TestRow {
         fn get_str_value(&self, column_name: &str) -> String {
@@ -70,13 +70,12 @@ mod tests {
         }
     }
 
-
     #[tokio::test]
     async fn test_start_server() {
         dotenv().ok();
         let data_store = Box::new(TestDataStore);
         let future = start_server(data_store);
         let result = timeout(Duration::from_secs(1), future).await;
-        assert!(result.is_err());  
+        assert!(result.is_err());
     }
 }
