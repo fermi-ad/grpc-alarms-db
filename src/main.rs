@@ -47,3 +47,36 @@ async fn start_server<T: DataRow + 'static>(
         Err(e) => Err(Box::new(e)),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tokio::time::timeout;
+    use std::time::Duration;
+    struct TestRow;
+    impl DataRow for TestRow {
+        fn get_str_value(&self, column_name: &str) -> String {
+            column_name.to_string()
+        }
+        fn get_i32_value(&self, column_name: &str) -> i32 {
+            column_name.len() as i32
+        }
+    }
+    struct TestDataStore;
+    #[tonic::async_trait]
+    impl DataStore<TestRow> for TestDataStore {
+        async fn execute_query(&self, _query: &str) -> Vec<TestRow> {
+            vec![]
+        }
+    }
+
+
+    #[tokio::test]
+    async fn test_start_server() {
+        dotenv().ok();
+        let data_store = Box::new(TestDataStore);
+        let future = start_server(data_store);
+        let result = timeout(Duration::from_secs(1), future).await;
+        assert!(result.is_err());  
+    }
+}
