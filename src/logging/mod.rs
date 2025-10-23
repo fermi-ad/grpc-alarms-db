@@ -1,6 +1,6 @@
-use tracing::Level;
-use tracing_subscriber::fmt::{time::FormatTime, format};
 use chrono::Local;
+use tracing::Level;
+use tracing_subscriber::fmt::{format, time::FormatTime};
 
 struct LocalTimer;
 

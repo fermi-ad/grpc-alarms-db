@@ -1,13 +1,14 @@
 use tonic::{Request, Response, Status};
 use tracing::info;
 
-use proto::{ alarm_list_service_server::AlarmListService, EmptyRequest, AlarmList, AlarmLists };
+use proto::{AlarmList, AlarmLists, EmptyRequest, alarm_list_service_server::AlarmListService};
 
-use crate::db::{DataStore, DataRow};
+use crate::db::{DataRow, DataStore};
 
 pub mod proto {
     tonic::include_proto!("alarmlists");
-    pub(crate) const FILE_DESCRIPTOR_SET: &[u8] = tonic::include_file_descriptor_set!("alarmprotos_descriptor");
+    pub(crate) const FILE_DESCRIPTOR_SET: &[u8] =
+        tonic::include_file_descriptor_set!("alarmprotos_descriptor");
 }
 
 pub struct AlarmListServiceImpl<T: DataRow> {
@@ -21,7 +22,7 @@ impl<T: DataRow + 'static> AlarmListService for AlarmListServiceImpl<T> {
         _request: Request<EmptyRequest>,
     ) -> Result<Response<AlarmLists>, Status> {
         info!("Query for alarm lists ");
-        
+
         let alarm_list_query: &str = "";
 
         let rows = self.data_store.execute_query(alarm_list_query).await;
@@ -118,4 +119,4 @@ mod tests {
             assert_eq!(value.list_number, (index + 1) as i32);
         }
     }
-}   
+}

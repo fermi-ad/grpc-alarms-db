@@ -1,10 +1,13 @@
+use crate::db::{DataRow, DataStore};
+use sqlx::{
+    Pool, Postgres, Row,
+    postgres::{PgPoolOptions, PgRow},
+};
 use std::{env, time::Duration};
-use sqlx::{postgres::{PgPoolOptions, PgRow}, Pool, Postgres, Row};
 use tonic::Status;
-use crate::db::{DataStore, DataRow};
 
 pub struct PostgresDataStore {
-    db_pool: Pool<Postgres>
+    db_pool: Pool<Postgres>,
 }
 
 async fn establish_connection_pool() -> Pool<Postgres> {
@@ -20,7 +23,7 @@ async fn establish_connection_pool() -> Pool<Postgres> {
 impl PostgresDataStore {
     pub async fn new() -> Self {
         PostgresDataStore {
-            db_pool: establish_connection_pool().await
+            db_pool: establish_connection_pool().await,
         }
     }
 }
@@ -28,13 +31,13 @@ impl PostgresDataStore {
 impl Clone for PostgresDataStore {
     fn clone(&self) -> Self {
         PostgresDataStore {
-            db_pool: self.db_pool.clone()
+            db_pool: self.db_pool.clone(),
         }
     }
 }
 
 pub struct PostgresDataRow {
-    row: PgRow
+    row: PgRow,
 }
 impl DataRow for PostgresDataRow {
     fn get_str_value(&self, column_name: &str) -> String {
@@ -51,12 +54,13 @@ impl DataStore<PostgresDataRow> for PostgresDataStore {
         let sql_rows = sqlx::query(query)
             .fetch_all(&self.db_pool)
             .await
-            .map_err(|e| {
-                Status::internal(format!("Alarm list retrieval query failed: {}", e))
-            });
+            .map_err(|e| Status::internal(format!("Alarm list retrieval query failed: {}", e)));
         match sql_rows {
             Err(_) => Vec::new(),
-            Ok(rows) => rows.into_iter().map(|row| PostgresDataRow { row }).collect()
+            Ok(rows) => rows
+                .into_iter()
+                .map(|row| PostgresDataRow { row })
+                .collect(),
         }
     }
 }

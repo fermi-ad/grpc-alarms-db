@@ -7,5 +7,5 @@ pub trait DataRow {
 
 #[tonic::async_trait]
 pub trait DataStore<T: DataRow> {
-    async fn execute_query(&self, query: &str) -> Vec<T>;   
+    async fn execute_query(&self, query: &str) -> Vec<T>;
 }
