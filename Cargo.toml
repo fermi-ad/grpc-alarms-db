@@ -1,0 +1,58 @@
+[package]
+name = "grpc-alarms-db"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+# These dependencies are used to support Rust's async environment.
+
+futures = "0.3"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "rt"] }
+tokio-stream = "0.1"
+tracing-subscriber = { version = "0.3", features = ["chrono"] }
+tracing-futures = "0.2"
+tracing = { version = "0.1", features = ["log"] }
+
+# These crates are used to implement the gRPC web service.
+
+tonic = "0.13"
+tonic-reflection = "0.13"
+warp = "0.3"
+
+# These crates provide runtime support for protobufs.
+# keep prost and prost-types version at 0.13
+prost = "0.13"
+prost-types = "0.13"
+prost-serde = "0.3"
+
+# support for JSON serialization and deserialization.
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# This crate provides access to PostgreSQL.
+
+sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "postgres", "json"] }
+
+# This crate generates current date and time
+
+chrono = "0.4"
+
+#This crate is used to load environment variables from a .env file
+
+dotenv = "0.15"
+tonic-build = "0.14"
+
+[build-dependencies]
+
+# This crate translates protobuf source files into a Rust module.
+
+tonic-build = { version = "0.13", features = ["prost"] }
+prost-build = "0.14"
+protoc-bin-vendored = "3.2"
+
+[profile.dev.package.sqlx-macros]
+opt-level = 3
+
+[profile.release]
+opt-level = 'z'
+lto = true
