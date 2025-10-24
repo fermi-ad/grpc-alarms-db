@@ -10,7 +10,7 @@ on:
 
 jobs:
   run-tests-and-coverage:
-    uses: fermi-ad/.github/.github/workflows/rust-integration.yaml@dcdbfafd8f118ba7a963890f95a0e9c50bf2d638
+    uses: fermi-ad/.github/.github/workflows/rust-integration.yaml@02de88f39fb7a7dd994414898abaef606153fb5a
     secrets: inherit
     permissions:
       contents: write
