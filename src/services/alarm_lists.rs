@@ -12,7 +12,13 @@ pub mod proto {
 }
 
 pub struct AlarmListServiceImpl<T: DataRow> {
-    pub data_store: Box<dyn DataStore<T> + Send + Sync>,
+    data_store: Box<dyn DataStore<T>>,
+}
+
+impl<T: DataRow> AlarmListServiceImpl<T> {
+    pub fn new(data_store: Box<dyn DataStore<T>>) -> Self {
+        Self { data_store }
+    }
 }
 
 #[tonic::async_trait]
