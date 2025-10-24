@@ -32,7 +32,7 @@ mod tests {
             }
         }
     }
-    
+
     struct DummyDataStore {
         data: Vec<DummyRow>,
     }
