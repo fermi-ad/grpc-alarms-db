@@ -87,7 +87,7 @@ impl<T: DataRow> AlarmListServiceImpl<T> {
 }
 
 /// Implements the AlarmListService gRPC service.
-/// 
+///
 /// Translates query results from the DataStore into gRPC AlarmList messages.
 #[tonic::async_trait]
 impl<T: DataRow + 'static> AlarmListService for AlarmListServiceImpl<T> {
