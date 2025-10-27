@@ -4,7 +4,6 @@ use sqlx::{
     postgres::{PgPoolOptions, PgRow},
 };
 use std::{env, time::Duration};
-use tonic::Status;
 
 /// Postgres implementation of the DataStore trait
 pub struct PostgresDataStore {
@@ -43,6 +42,11 @@ impl Clone for PostgresDataStore {
 pub struct PostgresDataRow {
     row: PgRow,
 }
+impl From<PgRow> for PostgresDataRow {
+    fn from(row: PgRow) -> Self {
+        PostgresDataRow { row }
+    }
+}
 impl DataRow for PostgresDataRow {
     fn get_str_value(&self, column_name: &str) -> String {
         self.row.get(column_name)
@@ -60,18 +64,15 @@ impl DataRow for PostgresDataRow {
 #[tonic::async_trait]
 impl DataStore<PostgresDataRow> for PostgresDataStore {
     async fn execute_query(&self, query: &str) -> Result<Vec<PostgresDataRow>, DataStoreError> {
-        let sql_rows = sqlx::query(query)
-            .fetch_all(&self.db_pool)
-            .await
-            .map_err(|e| Status::internal(format!("Alarm list retrieval query failed: {}", e)));
-        match sql_rows {
-            Err(_) => Err(DataStoreError {
-                details: "Query execution failed. See system logs for details.".to_string(),
-            }),
-            Ok(rows) => Ok(rows
-                .into_iter()
-                .map(|row| PostgresDataRow { row })
-                .collect()),
+        let query_result = sqlx::query(query).fetch_all(&self.db_pool).await;
+        match query_result {
+            Ok(rows) => Ok(rows.into_iter().map(PostgresDataRow::from).collect()),
+            Err(e) => {
+                tracing::error!("Alarm list retrieval query failed: {}", e);
+                Err(DataStoreError {
+                    details: "Query execution failed. See system logs for details.".to_string(),
+                })
+            }
         }
     }
 }

@@ -1,7 +1,7 @@
 use dotenv::dotenv;
 use std::{
     env,
-    net::{Ipv4Addr, SocketAddr, SocketAddrV4},
+    net::{IpAddr, Ipv6Addr, SocketAddr},
 };
 use tonic::transport::Server;
 use tonic_reflection::server::Builder as ReflectionBuilder;
@@ -31,7 +31,7 @@ async fn start_server<T: DataRow + 'static>(
     data_store: impl DataStore<T> + 'static,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let port: u16 = env::var("ALARM_GRPC_SERVER_PORT")?.parse()?;
-    let addr = SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(0, 0, 0, 0), port));
+    let addr = SocketAddr::new(IpAddr::V6(Ipv6Addr::UNSPECIFIED), port);
     info!("***** Alarm gRPC Server is running at: {} *******", addr);
 
     let alarm_list_service =

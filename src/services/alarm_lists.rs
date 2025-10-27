@@ -33,14 +33,31 @@ impl<T: DataRow> AlarmListServiceImpl<T> {
         })
     }
 
+    /// Retrieves all devices that have alarm blocks mapped to their directly-assigned alarm list
     async fn generate_naive_alarm_lists(&self) -> Result<HashMap<i32, AlarmList>, DataStoreError> {
         info!("Query for alarm lists ");
 
         let alarm_list_query: &str = "
-            SELECT l.list_number, l.name AS list_name, l.long_name, l.description, l.modify_date, l.modify_user_name, d.name AS device_name
-            FROM hendricks.alarm_list_info l, accdb.device d
-            WHERE d.alarm_list_id = l.list_number
-            ORDER BY l.list_number, d.name;
+            SELECT 
+              l.list_number, 
+              l.name AS list_name,
+              l.long_name, 
+              l.description, 
+              l.modify_date, 
+              l.modify_user_name, 
+              d.name AS device_name
+            FROM 
+              hendricks.alarm_list_info l, 
+              accdb.device d, 
+              accdb.alarm_block b
+            WHERE 
+              d.alarm_list_id = l.list_number 
+            AND 
+              d.di = b.di
+            ORDER BY 
+              l.list_number, 
+              d.name
+            ;
             ";
 
         let rows = self.data_store.execute_query(alarm_list_query).await?;
@@ -64,15 +81,32 @@ impl<T: DataRow> AlarmListServiceImpl<T> {
             }))
     }
 
+    /// Retrieves all devices that are not explicitly mapped to a list but are part of a node that is mapped.
+    /// Updates the existing AlarmList objects so that devices appear in their parent node's list (if not already mapped).
     async fn assign_devices_to_node_lists(
         &self,
         naive_alarm_lists: &mut HashMap<i32, AlarmList>,
     ) -> Result<(), DataStoreError> {
         let node_alarm_list_query = "
-            SELECT n.list_number, d.device_name
-            FROM accdb.device d
-            OUTER JOIN hendricks.alarm_list_nodes n ON d.trunk = n.trunk AND d.node = n.node
-            WHERE d.alarm_list_id = 0 AND n.list_number <> 0
+            SELECT 
+              n.list_number, 
+              d.device_name
+            FROM 
+              accdb.alarm_block b, 
+              accdb.device d
+              FULL JOIN 
+                hendricks.alarm_list_nodes n 
+                ON 
+                  d.trunk = n.trunk 
+                AND 
+                  d.node = n.node
+            WHERE 
+              d.alarm_list_id = 0 
+            AND 
+              n.list_number <> 0 
+            AND 
+              b.di = d.di
+            ;
         ";
         let rows = self.data_store.execute_query(node_alarm_list_query).await?;
         for row in rows {
@@ -95,10 +129,16 @@ impl<T: DataRow + 'static> AlarmListService for AlarmListServiceImpl<T> {
         &self,
         _: Request<EmptyRequest>,
     ) -> Result<Response<AlarmLists>, Status> {
+        // First, build the alarm list associations from what the devices say their alarm list is
         let mut alarm_lists: HashMap<i32, AlarmList> = self.generate_naive_alarm_lists().await?;
+
+        // Then, map devices with alarm list ID of 0 to whatever list their parent node/FE is assigned to
         self.assign_devices_to_node_lists(&mut alarm_lists).await?;
+
+        // Sort the results for consistent output
         let mut sorted_results = alarm_lists.into_values().collect::<Vec<AlarmList>>();
         sorted_results.sort_by(|a, b| a.list_number.cmp(&b.list_number));
+
         Ok(Response::new(AlarmLists {
             alarm_lists: sorted_results,
         }))
