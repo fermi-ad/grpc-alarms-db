@@ -88,4 +88,21 @@ mod tests {
             true
         );
     }
+
+    #[test]
+    fn test_display_datastore_error() {
+        let error = DataStoreError {
+            details: "Test error".to_string(),
+        };
+        assert_eq!(format!("{}", error), "DataStoreError: Test error");
+    }
+
+    #[test]
+    fn test_datastore_error_to_status() {
+        let error = DataStoreError {
+            details: "Test error".to_string(),
+        };
+        let status: Status = error.into();
+        assert_eq!(status.code(), tonic::Code::Internal);
+    }
 }
