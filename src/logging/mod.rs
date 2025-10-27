@@ -10,6 +10,7 @@ impl FormatTime for LocalTimer {
     }
 }
 
+/// Configures the runtime environment for logging using tracing
 pub fn setup_logging() {
     let subscriber = tracing_subscriber::fmt()
         .with_timer(LocalTimer)

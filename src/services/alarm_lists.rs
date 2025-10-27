@@ -13,6 +13,7 @@ pub mod proto {
         tonic::include_file_descriptor_set!("alarmprotos_descriptor");
 }
 
+/// A service wrapping a DataStore to provide alarm list information, and implementing the Protobuf-defined gRPC service.
 pub struct AlarmListServiceImpl<T: DataRow> {
     data_store: Box<dyn DataStore<T>>,
 }
@@ -85,6 +86,9 @@ impl<T: DataRow> AlarmListServiceImpl<T> {
     }
 }
 
+/// Implements the AlarmListService gRPC service.
+/// 
+/// Translates query results from the DataStore into gRPC AlarmList messages.
 #[tonic::async_trait]
 impl<T: DataRow + 'static> AlarmListService for AlarmListServiceImpl<T> {
     async fn get_alarm_lists(

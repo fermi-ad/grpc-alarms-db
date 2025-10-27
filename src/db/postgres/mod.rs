@@ -6,6 +6,7 @@ use sqlx::{
 use std::{env, time::Duration};
 use tonic::Status;
 
+/// Postgres implementation of the DataStore trait
 pub struct PostgresDataStore {
     db_pool: Pool<Postgres>,
 }
@@ -36,6 +37,9 @@ impl Clone for PostgresDataStore {
     }
 }
 
+/// Represents a single row retrieved from a Postgres database
+/// implementing the DataRow trait. In this case, it wraps sqlx::PgRow
+/// to provide the necessary methods.
 pub struct PostgresDataRow {
     row: PgRow,
 }
@@ -51,6 +55,8 @@ impl DataRow for PostgresDataRow {
     }
 }
 
+/// Encapsulates the execution of queries against a Postgres database;
+/// Returns results as PostgresDataRow instances.
 #[tonic::async_trait]
 impl DataStore<PostgresDataRow> for PostgresDataStore {
     async fn execute_query(&self, query: &str) -> Result<Vec<PostgresDataRow>, DataStoreError> {

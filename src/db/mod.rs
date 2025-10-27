@@ -2,6 +2,7 @@ pub mod postgres;
 use std::{error::Error, fmt::Display};
 use tonic::Status;
 
+/// Custom error type for DataStore operations
 #[derive(Debug)]
 pub struct DataStoreError {
     details: String,
@@ -21,12 +22,14 @@ impl From<DataStoreError> for Status {
     }
 }
 
+/// Abstraction representing a single row retrieved from a data store
 pub trait DataRow: Send + Sync {
     fn get_str_value(&self, column_name: &str) -> String;
     fn get_i32_value(&self, column_name: &str) -> i32;
     fn get_datetime_value(&self, column_name: &str) -> chrono::DateTime<chrono::Utc>;
 }
 
+/// Abstraction for a data store capable of executing queries
 #[tonic::async_trait]
 pub trait DataStore<T: DataRow>: Send + Sync {
     async fn execute_query(&self, query: &str) -> Result<Vec<T>, DataStoreError>;
