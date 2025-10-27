@@ -1,4 +1,4 @@
-use crate::db::{DataRow, DataStore};
+use crate::db::{DataRow, DataStore, DataStoreError};
 use sqlx::{
     Pool, Postgres, Row,
     postgres::{PgPoolOptions, PgRow},
@@ -46,21 +46,26 @@ impl DataRow for PostgresDataRow {
     fn get_i32_value(&self, column_name: &str) -> i32 {
         self.row.get(column_name)
     }
+    fn get_datetime_value(&self, column_name: &str) -> chrono::DateTime<chrono::Utc> {
+        self.row.get(column_name)
+    }
 }
 
 #[tonic::async_trait]
 impl DataStore<PostgresDataRow> for PostgresDataStore {
-    async fn execute_query(&self, query: &str) -> Vec<PostgresDataRow> {
+    async fn execute_query(&self, query: &str) -> Result<Vec<PostgresDataRow>, DataStoreError> {
         let sql_rows = sqlx::query(query)
             .fetch_all(&self.db_pool)
             .await
             .map_err(|e| Status::internal(format!("Alarm list retrieval query failed: {}", e)));
         match sql_rows {
-            Err(_) => Vec::new(),
-            Ok(rows) => rows
+            Err(_) => Err(DataStoreError {
+                details: "Query execution failed. See system logs for details.".to_string(),
+            }),
+            Ok(rows) => Ok(rows
                 .into_iter()
                 .map(|row| PostgresDataRow { row })
-                .collect(),
+                .collect()),
         }
     }
 }

@@ -1,13 +1,35 @@
 pub mod postgres;
+use std::{error::Error, fmt::Display};
+use tonic::Status;
+
+#[derive(Debug)]
+pub struct DataStoreError {
+    details: String,
+}
+impl Display for DataStoreError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "DataStoreError: {}", self.details)
+    }
+}
+impl Error for DataStoreError {}
+
+impl From<DataStoreError> for Status {
+    fn from(_: DataStoreError) -> Self {
+        Status::internal(
+            "An error occured while accessing the data store. See system logs for details.",
+        )
+    }
+}
 
 pub trait DataRow: Send + Sync {
     fn get_str_value(&self, column_name: &str) -> String;
     fn get_i32_value(&self, column_name: &str) -> i32;
+    fn get_datetime_value(&self, column_name: &str) -> chrono::DateTime<chrono::Utc>;
 }
 
 #[tonic::async_trait]
 pub trait DataStore<T: DataRow>: Send + Sync {
-    async fn execute_query(&self, query: &str) -> Vec<T>;
+    async fn execute_query(&self, query: &str) -> Result<Vec<T>, DataStoreError>;
 }
 
 #[cfg(test)]
@@ -18,11 +40,14 @@ mod tests {
         data: String,
     }
     impl DataRow for DummyRow {
-        fn get_str_value(&self, _column_name: &str) -> String {
+        fn get_str_value(&self, _: &str) -> String {
             self.data.clone()
         }
-        fn get_i32_value(&self, _column_name: &str) -> i32 {
+        fn get_i32_value(&self, _: &str) -> i32 {
             self.data.len() as i32
+        }
+        fn get_datetime_value(&self, _: &str) -> chrono::DateTime<chrono::Utc> {
+            chrono::Utc::now()
         }
     }
     impl Clone for DummyRow {
@@ -38,8 +63,8 @@ mod tests {
     }
     #[tonic::async_trait]
     impl DataStore<DummyRow> for DummyDataStore {
-        async fn execute_query(&self, _query: &str) -> Vec<DummyRow> {
-            self.data.clone()
+        async fn execute_query(&self, _: &str) -> Result<Vec<DummyRow>, DataStoreError> {
+            Ok(self.data.clone())
         }
     }
 
@@ -54,9 +79,13 @@ mod tests {
         let store = DummyDataStore {
             data: vec![data1, data2],
         };
-        let results = store.execute_query("SELECT * FROM dummy").await;
+        let results = store.execute_query("SELECT * FROM dummy").await.unwrap();
         assert_eq!(results.len(), 2);
         assert_eq!(results[0].get_str_value("data"), "row1");
         assert_eq!(results[1].get_i32_value("data"), 4);
+        assert_eq!(
+            results[0].get_datetime_value("data").timestamp() <= chrono::Utc::now().timestamp(),
+            true
+        );
     }
 }

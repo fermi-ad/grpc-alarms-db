@@ -15,10 +15,9 @@ message AlarmList {
     string name = 2;
     string long_name = 3;
     string description = 4;
-    string modify_date = 5;
+    google.protobuf.Timestamp modify_date = 5;
     string modify_user_name = 6;
     repeated string member_devices = 7;
-    repeated AlarmList member_lists = 8;
 }
 
 message AlarmLists {

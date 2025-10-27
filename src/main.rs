@@ -35,7 +35,7 @@ async fn start_server<T: DataRow + 'static>(
     info!("***** Alarm gRPC Server is running at: {} *******", addr);
 
     let alarm_list_service =
-        AlarmListServiceServer::new(AlarmListServiceImpl::new(Box::new(data_store)));
+        AlarmListServiceServer::new(AlarmListServiceImpl::new(Box::new(data_store))); // Remember to clone the data store when adding new services
     let reflection_service = ReflectionBuilder::configure()
         .register_encoded_file_descriptor_set(proto::FILE_DESCRIPTOR_SET)
         .build_v1()
@@ -53,6 +53,8 @@ async fn start_server<T: DataRow + 'static>(
 
 #[cfg(test)]
 mod tests {
+    use crate::db::DataStoreError;
+
     use super::*;
     use std::time::Duration;
     use tokio::time::timeout;
@@ -64,12 +66,15 @@ mod tests {
         fn get_i32_value(&self, column_name: &str) -> i32 {
             column_name.len() as i32
         }
+        fn get_datetime_value(&self, _: &str) -> chrono::DateTime<chrono::Utc> {
+            chrono::Utc::now()
+        }
     }
     struct TestDataStore;
     #[tonic::async_trait]
     impl DataStore<TestRow> for TestDataStore {
-        async fn execute_query(&self, _query: &str) -> Vec<TestRow> {
-            vec![]
+        async fn execute_query(&self, _query: &str) -> Result<Vec<TestRow>, DataStoreError> {
+            Ok(vec![])
         }
     }
 
