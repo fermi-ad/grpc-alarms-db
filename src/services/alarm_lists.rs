@@ -33,12 +33,15 @@ impl<T: DataRow> AlarmListServiceImpl<T> {
         })
     }
 
-    /// Retrieves all devices that have alarm blocks mapped to their directly-assigned alarm list
-    async fn generate_naive_alarm_lists(&self) -> Result<HashMap<i32, AlarmList>, DataStoreError> {
-        info!("Query for alarm lists ");
+    /// Retrieves all devices and their associated alarm list.
+    ///
+    /// Will first attempt to use the device's directly-assigned list. If the list on the device
+    /// is 0, will fall back to the list on the device's node.
+    async fn get_devices_and_lists(&self) -> Result<Vec<AlarmList>, DataStoreError> {
+        info!("Query for alarm lists and associated devices ");
 
         let alarm_list_query: &str = "
-            SELECT 
+            SELECT DISTINCT
               l.list_number, 
               l.name AS list_name,
               l.long_name, 
@@ -47,13 +50,24 @@ impl<T: DataRow> AlarmListServiceImpl<T> {
               l.modify_user_name, 
               d.name AS device_name
             FROM 
-              hendricks.alarm_list_info l, 
-              accdb.device d, 
               accdb.alarm_block b
-            WHERE 
-              d.alarm_list_id = l.list_number 
-            AND 
-              d.di = b.di
+              INNER JOIN
+                accdb.device d
+                ON
+                  d.di = b.di
+              INNER JOIN 
+                hendricks.alarm_list_nodes n 
+                ON 
+                  d.trunk = n.trunk 
+                AND 
+                  d.node = n.node
+              INNER JOIN
+                hendricks.alarm_list_info l
+                ON
+                  CASE
+                    WHEN d.alarm_list_id > 0 THEN d.alarm_list_id = l.list_number
+                    ELSE n.list_number = l.list_number
+                  END             
             ORDER BY 
               l.list_number, 
               d.name
@@ -61,7 +75,7 @@ impl<T: DataRow> AlarmListServiceImpl<T> {
             ";
 
         let rows = self.data_store.execute_query(alarm_list_query).await?;
-        Ok(rows
+        let mut sortable_rows = rows
             .into_iter()
             .fold(HashMap::new(), |mut acc: HashMap<i32, AlarmList>, row| {
                 let list_number = row.get_i32_value("list_number");
@@ -78,45 +92,11 @@ impl<T: DataRow> AlarmListServiceImpl<T> {
                 let device_name = row.get_str_value("device_name");
                 alarm_list.member_devices.push(device_name);
                 acc
-            }))
-    }
-
-    /// Retrieves all devices that are not explicitly mapped to a list but are part of a node that is mapped.
-    /// Updates the existing AlarmList objects so that devices appear in their parent node's list (if not already mapped).
-    async fn assign_devices_to_node_lists(
-        &self,
-        naive_alarm_lists: &mut HashMap<i32, AlarmList>,
-    ) -> Result<(), DataStoreError> {
-        let node_alarm_list_query = "
-            SELECT 
-              n.list_number, 
-              d.device_name
-            FROM 
-              accdb.alarm_block b, 
-              accdb.device d
-              FULL JOIN 
-                hendricks.alarm_list_nodes n 
-                ON 
-                  d.trunk = n.trunk 
-                AND 
-                  d.node = n.node
-            WHERE 
-              d.alarm_list_id = 0 
-            AND 
-              n.list_number <> 0 
-            AND 
-              b.di = d.di
-            ;
-        ";
-        let rows = self.data_store.execute_query(node_alarm_list_query).await?;
-        for row in rows {
-            let list_number = row.get_i32_value("list_number");
-            if let Some(alarm_list) = naive_alarm_lists.get_mut(&list_number) {
-                let device_name = row.get_str_value("device_name");
-                alarm_list.member_devices.push(device_name);
-            }
-        }
-        Ok(())
+            })
+            .into_values()
+            .collect::<Vec<AlarmList>>();
+        sortable_rows.sort_by(|a, b| a.list_number.cmp(&b.list_number));
+        Ok(sortable_rows)
     }
 }
 
@@ -129,19 +109,8 @@ impl<T: DataRow + 'static> AlarmListService for AlarmListServiceImpl<T> {
         &self,
         _: Request<EmptyRequest>,
     ) -> Result<Response<AlarmLists>, Status> {
-        // First, build the alarm list associations from what the devices say their alarm list is
-        let mut alarm_lists: HashMap<i32, AlarmList> = self.generate_naive_alarm_lists().await?;
-
-        // Then, map devices with alarm list ID of 0 to whatever list their parent node/FE is assigned to
-        self.assign_devices_to_node_lists(&mut alarm_lists).await?;
-
-        // Sort the results for consistent output
-        let mut sorted_results = alarm_lists.into_values().collect::<Vec<AlarmList>>();
-        sorted_results.sort_by(|a, b| a.list_number.cmp(&b.list_number));
-
-        Ok(Response::new(AlarmLists {
-            alarm_lists: sorted_results,
-        }))
+        let alarm_lists: Vec<AlarmList> = self.get_devices_and_lists().await?;
+        Ok(Response::new(AlarmLists { alarm_lists }))
     }
 }
 
@@ -246,11 +215,8 @@ mod tests {
             assert_eq!(value.list_number, (index + 1) as i32);
             assert_eq!(
                 value.member_devices,
-                vec![
-                    format!("G:AMANDA{}", index_text),
-                    format!("G:AMANDA{}", index_text)
-                ]
-            ); // Appears twice due to the behavior of TestDataStore
+                vec![format!("G:AMANDA{}", index_text)]
+            );
         }
     }
 }
