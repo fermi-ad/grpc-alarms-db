@@ -1,0 +1,25 @@
+syntax = "proto3";
+
+import "google/protobuf/timestamp.proto";
+
+package alarmlists;
+
+service AlarmListService {
+    rpc getAlarmLists(EmptyRequest) returns (AlarmLists);
+}
+
+message EmptyRequest {}
+
+message AlarmList {
+    int32 list_number = 1;
+    string name = 2;
+    string long_name = 3;
+    string description = 4;
+    google.protobuf.Timestamp modify_date = 5;
+    string modify_user_name = 6;
+    repeated string member_devices = 7;
+}
+
+message AlarmLists {
+    repeated AlarmList alarm_lists = 1;
+}
