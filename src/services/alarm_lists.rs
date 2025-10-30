@@ -3,12 +3,12 @@ use std::collections::HashMap;
 use tonic::{Request, Response, Status};
 use tracing::info;
 
-use proto::{AlarmList, AlarmLists, EmptyRequest, alarm_list_service_server::AlarmListService};
+use proto::{AlarmList, AlarmLists, alarm_list_service_server::AlarmListService};
 
 use crate::db::{DataRow, DataStore, DataStoreError};
 
 pub mod proto {
-    tonic::include_proto!("alarmlists");
+    tonic::include_proto!("services.alarm_lists");
     pub(crate) const FILE_DESCRIPTOR_SET: &[u8] =
         tonic::include_file_descriptor_set!("alarmprotos_descriptor");
 }
@@ -105,10 +105,7 @@ impl<T: DataRow> AlarmListServiceImpl<T> {
 /// Translates query results from the DataStore into gRPC AlarmList messages.
 #[tonic::async_trait]
 impl<T: DataRow + 'static> AlarmListService for AlarmListServiceImpl<T> {
-    async fn get_alarm_lists(
-        &self,
-        _: Request<EmptyRequest>,
-    ) -> Result<Response<AlarmLists>, Status> {
+    async fn get_alarm_lists(&self, _: Request<()>) -> Result<Response<AlarmLists>, Status> {
         let alarm_lists: Vec<AlarmList> = self.get_devices_and_lists().await?;
         Ok(Response::new(AlarmLists { alarm_lists }))
     }
@@ -191,7 +188,7 @@ mod tests {
         let service = AlarmListServiceImpl {
             data_store: Box::new(TestDataStore),
         };
-        let result = service.get_alarm_lists(Request::new(EmptyRequest {})).await;
+        let result = service.get_alarm_lists(Request::new(())).await;
         assert!(result.is_ok());
         let response = result.unwrap().into_inner();
         assert_eq!(response.alarm_lists.len(), 2);
