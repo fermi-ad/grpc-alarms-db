@@ -44,17 +44,17 @@ pub struct PostgresDataRow {
 }
 impl From<PgRow> for PostgresDataRow {
     fn from(row: PgRow) -> Self {
-        PostgresDataRow { row }
+        Self { row }
     }
 }
 impl DataRow for PostgresDataRow {
-    fn get_str_value(&self, column_name: &str) -> String {
-        self.row.get(column_name)
-    }
-    fn get_i32_value(&self, column_name: &str) -> i32 {
+    fn get_bool_value(&self, column_name: &str) -> bool {
         self.row.get(column_name)
     }
     fn get_datetime_value(&self, column_name: &str) -> chrono::DateTime<chrono::Utc> {
+        self.row.get(column_name)
+    }
+    fn get_str_value(&self, column_name: &str) -> String {
         self.row.get(column_name)
     }
 }
@@ -63,8 +63,28 @@ impl DataRow for PostgresDataRow {
 /// Returns results as PostgresDataRow instances.
 #[tonic::async_trait]
 impl DataStore<PostgresDataRow> for PostgresDataStore {
-    async fn execute_query(&self, query: &str) -> Result<Vec<PostgresDataRow>, DataStoreError> {
-        let query_result = sqlx::query(query).fetch_all(&self.db_pool).await;
+    async fn execute_query(&self, query: String) -> Result<Vec<PostgresDataRow>, DataStoreError> {
+        let query_result = sqlx::query(query.as_str()).fetch_all(&self.db_pool).await;
+        match query_result {
+            Ok(rows) => Ok(rows.into_iter().map(PostgresDataRow::from).collect()),
+            Err(e) => {
+                tracing::error!("Alarm list retrieval query failed: {}", e);
+                Err(DataStoreError {
+                    details: "Query execution failed. See system logs for details.".to_string(),
+                })
+            }
+        }
+    }
+    async fn execute_parameterized_query(
+        &self,
+        query: String,
+        bindings: Vec<String>,
+    ) -> Result<Vec<PostgresDataRow>, DataStoreError> {
+        let mut query_builder = sqlx::query(query.as_str());
+        for binding in bindings {
+            query_builder = query_builder.bind(binding);
+        }
+        let query_result = query_builder.fetch_all(&self.db_pool).await;
         match query_result {
             Ok(rows) => Ok(rows.into_iter().map(PostgresDataRow::from).collect()),
             Err(e) => {
