@@ -48,7 +48,7 @@ impl<T: DataRow> UserLayoutsServiceImpl<T> {
                 |mut acc: HashMap<String, UserLayout>, row| {
                     let user_name = row.get_str_value("user_name");
                     let user_layout = acc.entry(user_name.clone()).or_insert(UserLayout {
-                        user_name: user_name,
+                        user_name,
                         groups: Vec::new(),
                     });
                     let group_name = row.get_str_value("group_name");

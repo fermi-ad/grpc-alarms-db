@@ -45,11 +45,8 @@ impl<T: DataRow> AlarmGroupsServiceImpl<T> {
                 group_name, 
                 member_name
             ;
-        ",
-            match where_clause {
-                None => String::new(),
-                Some(clause) => clause,
-            }
+            ",
+            where_clause.unwrap_or_default()
         )
     }
 
