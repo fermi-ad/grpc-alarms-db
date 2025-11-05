@@ -66,7 +66,7 @@ impl<T: DataRow> AlarmGroupsServiceImpl<T> {
                 HashMap::new(),
                 |mut acc: HashMap<String, AlarmGroup>, row| {
                     let group_name = row.get_str_value("group_name");
-                    let alarm_group = acc.entry(group_name.clone()).or_insert(AlarmGroup {
+                    let alarm_group = acc.entry(group_name.clone()).or_insert_with(|| AlarmGroup {
                         name: group_name,
                         description: row.get_str_value("description"),
                         modified_date: Self::convert_datetime_to_timestamp(
