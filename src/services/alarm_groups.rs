@@ -28,22 +28,22 @@ impl<T: DataRow> AlarmGroupsServiceImpl<T> {
         format!(
             "
             SELECT 
-                group_name,
-                description,
-                modified_date,
-                modified_user,
-                member_name,
-                member_is_group
+                g.group_name,
+                g.description,
+                g.modified_date,
+                g.modified_user,
+                m.member_name,
+                m.member_is_group
             FROM 
-                alarms.groups g
+                alarms_application.groups g
                 INNER JOIN
-                    alarms.group_membership m
+                    alarms_application.group_membership m
                     ON
                         g.group_name = m.group_name
             {}
             ORDER BY 
-                group_name, 
-                member_name
+                g.group_name, 
+                m.member_name
             ;
             ",
             where_clause.unwrap_or_default()
