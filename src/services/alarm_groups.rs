@@ -35,9 +35,9 @@ impl<T: DataRow> AlarmGroupsServiceImpl<T> {
                 m.member_name,
                 m.member_is_group
             FROM 
-                alarms_application.groups g
+                alarmsapp.groups g
                 INNER JOIN
-                    alarms_application.group_membership m
+                    alarmsapp.group_membership m
                     ON
                         g.group_name = m.group_name
             {}

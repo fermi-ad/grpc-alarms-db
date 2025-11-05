@@ -32,7 +32,7 @@ impl<T: DataRow> UserLayoutsServiceImpl<T> {
               user_name,
               group_name
             FROM
-              alarms_application.user_layouts
+              alarmsapp.user_layouts
             ORDER BY
               user_name,
               group_name
