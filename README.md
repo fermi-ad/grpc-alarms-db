@@ -11,9 +11,15 @@ This service provides access to persistent data in the context of accelerator al
 ## Supported endpoints
 
 Currently, the following methods are provided via gRPC. Full schema descriptions can be found in the `service/grpc-alarms-db/*` directory of the [`interface-definitions`](https://github.com/fermi-ad/interface-definitions) repository. That repository is a GitHub submodule of this project:
-- `getAlarmLists() -> AlarmLists`
-  - This method takes no parameters and returns all alarm lists in the database. 
-  - Currently only supports ACNET devices as members of a list. [Issue #4](https://github.com/fermi-ad/grpc-alarms-db/issues/4) exists to capture effort towards supporting EPICS devices in alarm lists.
+- `getAllGroups() -> AlarmGroups`
+  - This method takes no parameters and returns all alarm groups in the database. 
+  - Members of the group will be split out into lists of device names and subgroup names.
+- `getSpecifiedGroups(GroupsRequest) -> AlarmGroups`
+  - This method takes a request parameter, containing a list of group names to retrieve.
+  - Returns the same data as `getAllGroups()`, but filtered for just groups with the specified names.
+- `getUserLayouts() -> UserLayouts`
+  - Method that takes no parameters and returns all user layouts. 
+  - A `UserLayout` is the set of all top-level groups that a specific user has configured for their alarm screen. If a device in the group or a subgroup goes into alarm, it will appear in a category with the top-level group's name. 
 
 ## Sustainability
 

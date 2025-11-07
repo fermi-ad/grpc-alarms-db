@@ -12,7 +12,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .build_server(true)
         .protoc_arg("--experimental_allow_proto3_optional")
         .file_descriptor_set_path(out_dir.join("alarmprotos_descriptor.bin"))
-        .compile_protos(&[format!("{}/alarm-lists.proto", ALARM_PROTO_DIR)], incl)?;
+        .compile_protos(
+            &[
+                format!("{}/alarm-groups.proto", ALARM_PROTO_DIR),
+                format!("{}/user-layouts.proto", ALARM_PROTO_DIR),
+            ],
+            incl,
+        )?;
 
     Ok(())
 }

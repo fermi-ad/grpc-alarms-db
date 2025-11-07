@@ -13,8 +13,11 @@ mod db;
 use db::{DataRow, DataStore, postgres::PostgresDataStore};
 
 mod services;
-use services::alarm_lists::{
-    AlarmListServiceImpl, proto, proto::alarm_list_service_server::AlarmListServiceServer,
+use services::alarm_groups::{
+    AlarmGroupsServiceImpl, proto, proto::alarm_group_service_server::AlarmGroupServiceServer,
+};
+use services::user_layouts::{
+    UserLayoutsServiceImpl, proto::user_layouts_service_server::UserLayoutsServiceServer,
 };
 
 #[tokio::main]
@@ -28,20 +31,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 async fn start_server<T: DataRow + 'static>(
-    data_store: impl DataStore<T> + 'static,
+    data_store: impl DataStore<T> + 'static + Clone,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let port: u16 = env::var("ALARM_GRPC_SERVER_PORT")?.parse()?;
     let addr = SocketAddr::new(IpAddr::V6(Ipv6Addr::UNSPECIFIED), port);
     info!("***** Alarm gRPC Server is running at: {} *******", addr);
 
-    let alarm_list_service =
-        AlarmListServiceServer::new(AlarmListServiceImpl::new(Box::new(data_store))); // Remember to clone the data store when adding new services
+    let user_layouts_service =
+        UserLayoutsServiceServer::new(UserLayoutsServiceImpl::new(Box::new(data_store.clone()))); // Remember to clone the data store when adding new services
+    let alarm_group_service =
+        AlarmGroupServiceServer::new(AlarmGroupsServiceImpl::new(Box::new(data_store)));
     let reflection_service = ReflectionBuilder::configure()
         .register_encoded_file_descriptor_set(proto::FILE_DESCRIPTOR_SET)
         .build_v1()
         .unwrap();
     let result = Server::builder()
-        .add_service(alarm_list_service)
+        .add_service(user_layouts_service)
+        .add_service(alarm_group_service)
         .add_service(reflection_service)
         .serve(addr)
         .await;
@@ -53,28 +59,40 @@ async fn start_server<T: DataRow + 'static>(
 
 #[cfg(test)]
 mod tests {
-    use crate::db::DataStoreError;
-
     use super::*;
+    use crate::db::DataStoreError;
     use std::time::Duration;
     use tokio::time::timeout;
+
     struct TestRow;
     impl DataRow for TestRow {
-        fn get_str_value(&self, column_name: &str) -> String {
-            column_name.to_string()
-        }
-        fn get_i32_value(&self, column_name: &str) -> i32 {
-            column_name.len() as i32
+        fn get_bool_value(&self, _: &str) -> bool {
+            false
         }
         fn get_datetime_value(&self, _: &str) -> chrono::DateTime<chrono::Utc> {
             chrono::Utc::now()
+        }
+        fn get_str_value(&self, column_name: &str) -> String {
+            column_name.to_string()
         }
     }
     struct TestDataStore;
     #[tonic::async_trait]
     impl DataStore<TestRow> for TestDataStore {
-        async fn execute_query(&self, _query: &str) -> Result<Vec<TestRow>, DataStoreError> {
+        async fn execute_query(&self, _: String) -> Result<Vec<TestRow>, DataStoreError> {
             Ok(vec![])
+        }
+        async fn execute_parameterized_query(
+            &self,
+            _: String,
+            _: Vec<String>,
+        ) -> Result<Vec<TestRow>, DataStoreError> {
+            Ok(vec![])
+        }
+    }
+    impl Clone for TestDataStore {
+        fn clone(&self) -> Self {
+            TestDataStore {}
         }
     }
 
