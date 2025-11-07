@@ -96,10 +96,9 @@ impl<T: DataRow> AlarmGroupsServiceImpl<T> {
         info!("Query for all alarm groups and associated devices ");
 
         let alarm_group_query = Self::construct_query(None);
-
         let query_result = self.data_store.execute_query(alarm_group_query).await?;
-        let alarm_groups = Self::process_query_result(query_result);
-        Ok(alarm_groups)
+
+        Ok(Self::process_query_result(query_result))
     }
 
     async fn run_parameterized_query(
@@ -121,8 +120,8 @@ impl<T: DataRow> AlarmGroupsServiceImpl<T> {
             .data_store
             .execute_parameterized_query(alarm_group_query, specified_groups)
             .await?;
-        let alarm_groups = Self::process_query_result(query_result);
-        Ok(alarm_groups)
+
+        Ok(Self::process_query_result(query_result))
     }
 }
 
@@ -133,6 +132,7 @@ impl<T: DataRow> AlarmGroupsServiceImpl<T> {
 impl<T: DataRow + 'static> AlarmGroupService for AlarmGroupsServiceImpl<T> {
     async fn get_all_groups(&self, _: Request<()>) -> Result<Response<AlarmGroups>, Status> {
         let alarm_groups: Vec<AlarmGroup> = self.run_full_query().await?;
+
         Ok(Response::new(AlarmGroups { alarm_groups }))
     }
 
@@ -142,6 +142,7 @@ impl<T: DataRow + 'static> AlarmGroupService for AlarmGroupsServiceImpl<T> {
     ) -> Result<Response<AlarmGroups>, Status> {
         let requested_groups = request.into_inner().groups;
         let alarm_groups: Vec<AlarmGroup> = self.run_parameterized_query(requested_groups).await?;
+
         Ok(Response::new(AlarmGroups { alarm_groups }))
     }
 }

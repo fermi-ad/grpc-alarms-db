@@ -56,3 +56,30 @@ opt-level = 3
 [profile.release]
 opt-level = 'z'
 lto = true
+
+[workspace.lints.rust]
+ambiguous_negative_literals = "warn"
+let_underscore_drop = "warn"
+redundant_imports = "warn"
+redundant_lifetimes = "warn"
+unit_bindings = "warn"
+unnameable_types = "warn"
+unreachable_pub = "warn"
+unused_import_braces = "warn"
+unused_lifetimes = "warn"
+unused_qualifications = "warn"
+
+[workspace.lints.clippy]
+manual_assert = "warn"
+allow_attributes_without_reason = "warn"
+collection_is_never_read = "warn"
+comparison_chain = "warn"
+elidable_lifetime_names = "warn"
+empty_drop = "warn"
+enum_glob_use = "warn"
+equatable_if_let = "warn"
+error_impl_error = "warn"
+exit = "deny"
+if_not_else = "warn"
+if_then_some_else_none = "warn"
+impl_trait_in_params = "warn"
