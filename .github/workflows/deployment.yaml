@@ -1,0 +1,15 @@
+name: Continuous Deployment
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    uses: fermi-ad/.github/.github/workflows/rust-deployment.yaml@1b70ed2f307b673b980e3545adf78d9794730821
+    secrets: inherit
+    permissions:
+      contents: read
+    with:
+      pull-git-submodules: true
