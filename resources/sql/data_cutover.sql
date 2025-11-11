@@ -29,7 +29,7 @@ FROM accdb.alarm_block b
     INNER JOIN hendricks.alarm_list_info l 
 	    ON 
 		    CASE 
-			    WHEN d.alarm_list id > 0 
+			    WHEN d.alarm_list_id > 0 
 				    THEN d.alarm_list_id = l.list_number
 				ELSE n.list_number = l.list_number 
 			END
