@@ -3,7 +3,6 @@ use std::{env, path::PathBuf, slice::from_ref};
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let alarm_proto_dir: String =
         String::from("extern/proto-defs/proto/controls/service/grpc-alarms-db/v1");
-    let incl: &[String] = from_ref(&alarm_proto_dir);
     let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
     let protoc_path = protoc_bin_vendored::protoc_bin_path()?;
     unsafe { std::env::set_var("PROTOC", protoc_path) };
@@ -18,7 +17,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 format!("{}/alarm-groups.proto", alarm_proto_dir),
                 format!("{}/user-layouts.proto", alarm_proto_dir),
             ],
-            incl,
+            from_ref(&alarm_proto_dir),
         )?;
 
     Ok(())
