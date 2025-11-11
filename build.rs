@@ -1,9 +1,9 @@
-use std::{env, path::PathBuf};
+use std::{env, path::PathBuf, slice::from_ref};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let alarm_proto_dir: String =
         String::from("extern/proto-defs/proto/controls/service/grpc-alarms-db/v1");
-    let incl: &[String] = &[alarm_proto_dir.clone()];
+    let incl: &[String] = from_ref(&alarm_proto_dir);
     let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
     let protoc_path = protoc_bin_vendored::protoc_bin_path()?;
     unsafe { std::env::set_var("PROTOC", protoc_path) };
