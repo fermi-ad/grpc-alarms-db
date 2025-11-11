@@ -23,7 +23,6 @@ tonic-reflection = "0.14.2"
 warp = "0.3"
 
 # These crates provide runtime support for protobufs.
-# keep prost and prost-types version at 0.13
 prost = "0.14.1"
 prost-types = "0.14.1"
 prost-serde = "0.3"
