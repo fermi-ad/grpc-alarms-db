@@ -31,7 +31,7 @@ pub trait DataRow: Send + Sync {
 
 /// Abstraction for a data store capable of executing queries
 #[tonic::async_trait]
-pub trait DataStore<T: DataRow>: Clone + Send + Sync {
+pub trait DataStore<T: DataRow>: Send + Sync {
     /// Executes a basic SQL statement. If any user input is required, use [`execute_parameterized_query()`]
     async fn execute_query(&self, query: String) -> Result<Vec<T>, DataStoreError>;
 
