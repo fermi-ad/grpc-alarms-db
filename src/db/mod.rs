@@ -32,7 +32,14 @@ pub trait DataRow: Send + Sync {
 /// Abstraction for a data store capable of executing queries
 #[tonic::async_trait]
 pub trait DataStore<T: DataRow>: Send + Sync {
+    /// Executes a basic SQL statement. If any user input is required, use [`execute_parameterized_query()`]
     async fn execute_query(&self, query: String) -> Result<Vec<T>, DataStoreError>;
+
+    /// Executes a parameterized query. It is expected that the query string will have sequential placeholders
+    /// for the paramterized data.
+    ///
+    /// Example: If passing 5 elements into the query. the query should contain $1, $2, $3, $4, and $5, and
+    /// the bindings should have no fewer than 5 elements (any additional elements beyond 5 will be ignored).
     async fn execute_parameterized_query(
         &self,
         query: String,
