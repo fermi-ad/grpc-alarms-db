@@ -9,9 +9,9 @@ edition = "2024"
 futures = "0.3"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "rt"] }
 tokio-stream = "0.1"
-tracing-subscriber = { version = "0.3", features = ["chrono"] }
+tracing-subscriber = { version = "0.3.22", features = ["chrono"] }
 tracing-futures = "0.2"
-tracing = { version = "0.1", features = ["log"] }
+tracing = { version = "0.1.43", features = ["log"] }
 
 # These crates are used to implement the gRPC web service.
 
