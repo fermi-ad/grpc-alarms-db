@@ -6,11 +6,8 @@ edition = "2024"
 [dependencies]
 # These dependencies are used to support Rust's async environment.
 
-futures = "0.3"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "rt"] }
-tokio-stream = "0.1"
 tracing-subscriber = { version = "0.3.22", features = ["chrono"] }
-tracing-futures = "0.2"
 tracing = { version = "0.1.43", features = ["log"] }
 
 # These crates are used to implement the gRPC web service.
@@ -18,18 +15,11 @@ tracing = { version = "0.1.43", features = ["log"] }
 tonic = "0.14.2"
 tonic-health = "0.14.2"
 tonic-prost = "0.14.2"
-tonic-prost-build = "0.14.2"
 tonic-reflection = "0.14.2"
-warp = "0.4.2"
 
 # These crates provide runtime support for protobufs.
 prost = "0.14.1"
 prost-types = "0.14.1"
-prost-serde = "0.3"
-
-# support for JSON serialization and deserialization.
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
 
 # This crate provides access to PostgreSQL.
 sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "postgres", "json", "chrono"] }
