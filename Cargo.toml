@@ -20,7 +20,7 @@ tonic-health = "0.14.2"
 tonic-prost = "0.14.2"
 tonic-prost-build = "0.14.2"
 tonic-reflection = "0.14.2"
-warp = "0.3"
+warp = "0.4.2"
 
 # These crates provide runtime support for protobufs.
 prost = "0.14.1"
