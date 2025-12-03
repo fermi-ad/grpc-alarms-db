@@ -1,4 +1,4 @@
-use std::{cmp::Ordering, collections::HashMap};
+use std::{cmp::Ordering, collections::HashMap, marker::PhantomData};
 
 use tonic::{Request, Response, Status};
 use tracing::info;
@@ -16,13 +16,17 @@ use proto::{
 };
 
 /// A service wrapping a DataStore to provide alarm group information, and implementing the Protobuf-defined gRPC service.
-pub struct AlarmGroupsServiceImpl<T: DataRow> {
-    data_store: Box<dyn DataStore<T>>,
+pub struct AlarmGroupsServiceImpl<T: DataRow, U: DataStore<T>> {
+    data_store: Box<U>,
+    _row_type: PhantomData<T>,
 }
 
-impl<T: DataRow> AlarmGroupsServiceImpl<T> {
-    pub fn new(data_store: Box<dyn DataStore<T>>) -> Self {
-        Self { data_store }
+impl<T: DataRow, U: DataStore<T>> AlarmGroupsServiceImpl<T, U> {
+    pub fn new(data_store: Box<U>) -> Self {
+        Self {
+            data_store,
+            _row_type: PhantomData,
+        }
     }
 
     fn convert_datetime_to_timestamp(
@@ -194,7 +198,9 @@ impl<T: DataRow> AlarmGroupsServiceImpl<T> {
 ///
 /// Translates query results from the DataStore into gRPC AlarmGroup messages.
 #[tonic::async_trait]
-impl<T: DataRow + 'static> AlarmGroupService for AlarmGroupsServiceImpl<T> {
+impl<T: DataRow + 'static, U: DataStore<T> + 'static> AlarmGroupService
+    for AlarmGroupsServiceImpl<T, U>
+{
     async fn get_group_metadata(
         &self,
         _: Request<()>,
@@ -301,6 +307,14 @@ mod tests {
             }
         }
     }
+    impl Clone for TestDataStore {
+        fn clone(&self) -> Self {
+            Self {
+                row1: self.row1.clone(),
+                row2: self.row2.clone(),
+            }
+        }
+    }
     #[tonic::async_trait]
     impl DataStore<TestRow> for TestDataStore {
         async fn execute_query(&self, _: String) -> Result<Vec<TestRow>, DataStoreError> {
@@ -319,6 +333,7 @@ mod tests {
     async fn test_get_group_metadata() {
         let service = AlarmGroupsServiceImpl {
             data_store: Box::new(TestDataStore::new()),
+            _row_type: PhantomData,
         };
         let result = service.get_group_metadata(Request::new(())).await;
         assert!(result.is_ok());
@@ -348,6 +363,7 @@ mod tests {
     async fn test_get_groups() {
         let service = AlarmGroupsServiceImpl {
             data_store: Box::new(TestDataStore::new()),
+            _row_type: PhantomData,
         };
         let result = service
             .get_groups(Request::new(GroupsRequest {

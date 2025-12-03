@@ -30,7 +30,7 @@ impl PostgresDataStore {
 
 impl Clone for PostgresDataStore {
     fn clone(&self) -> Self {
-        PostgresDataStore {
+        Self {
             db_pool: self.db_pool.clone(),
         }
     }

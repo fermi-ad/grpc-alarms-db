@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, marker::PhantomData};
 
 use tonic::{Request, Response, Status};
 use tracing::info;
@@ -11,13 +11,17 @@ use proto::{UserLayout, UserLayouts, user_layouts_service_server::UserLayoutsSer
 use crate::db::{DataRow, DataStore, DataStoreError};
 
 /// A service wrapping a DataStore to provide alarm list information, and implementing the Protobuf-defined gRPC service.
-pub struct UserLayoutsServiceImpl<T: DataRow> {
-    data_store: Box<dyn DataStore<T>>,
+pub struct UserLayoutsServiceImpl<T: DataRow, U: DataStore<T>> {
+    data_store: Box<U>,
+    _row_type: PhantomData<T>,
 }
 
-impl<T: DataRow> UserLayoutsServiceImpl<T> {
-    pub fn new(data_store: Box<dyn DataStore<T>>) -> Self {
-        Self { data_store }
+impl<T: DataRow, U: DataStore<T>> UserLayoutsServiceImpl<T, U> {
+    pub fn new(data_store: Box<U>) -> Self {
+        Self {
+            data_store,
+            _row_type: PhantomData,
+        }
     }
 
     /// Retrieves all devices and their associated alarm list.
@@ -67,7 +71,9 @@ impl<T: DataRow> UserLayoutsServiceImpl<T> {
 ///
 /// Translates query results from the DataStore into gRPC AlarmList messages.
 #[tonic::async_trait]
-impl<T: DataRow + 'static> UserLayoutsService for UserLayoutsServiceImpl<T> {
+impl<T: DataRow + 'static, U: DataStore<T> + 'static> UserLayoutsService
+    for UserLayoutsServiceImpl<T, U>
+{
     async fn get_user_layouts(&self, _: Request<()>) -> Result<Response<UserLayouts>, Status> {
         let layouts: Vec<UserLayout> = self.get_layouts().await?;
         Ok(Response::new(UserLayouts { layouts }))
@@ -99,6 +105,11 @@ mod tests {
     }
 
     struct TestDataStore;
+    impl Clone for TestDataStore {
+        fn clone(&self) -> Self {
+            Self
+        }
+    }
     #[tonic::async_trait]
     impl DataStore<TestRow> for TestDataStore {
         async fn execute_query(&self, _: String) -> Result<Vec<TestRow>, DataStoreError> {
@@ -126,6 +137,7 @@ mod tests {
     async fn test_get_user_layouts() {
         let service = UserLayoutsServiceImpl {
             data_store: Box::new(TestDataStore),
+            _row_type: PhantomData,
         };
         let result = service.get_user_layouts(Request::new(())).await;
         assert!(result.is_ok());
