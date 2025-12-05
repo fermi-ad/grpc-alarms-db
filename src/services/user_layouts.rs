@@ -1,14 +1,14 @@
 use std::{collections::HashMap, marker::PhantomData};
 
 use tonic::{Request, Response, Status};
-use tracing::info;
+use tracing::{error, info};
 
 pub mod proto {
     tonic::include_proto!("services.alarm_user_layouts");
 }
 use proto::{UserLayout, UserLayouts, user_layouts_service_server::UserLayoutsService};
 
-use crate::db::{DataRow, DataStore, DataStoreError};
+use rust_db_lib::{DataRow, DataStore, DataStoreError};
 
 /// A service wrapping a DataStore to provide alarm list information, and implementing the Protobuf-defined gRPC service.
 pub struct UserLayoutsServiceImpl<T: DataRow, U: DataStore<T>> {
@@ -45,23 +45,20 @@ impl<T: DataRow, U: DataStore<T>> UserLayoutsServiceImpl<T, U> {
         .to_string();
 
         let rows = self.data_store.execute_query(layout_query).await?;
-        let mut sortable_rows = rows
-            .into_iter()
-            .fold(
-                HashMap::new(),
-                |mut acc: HashMap<String, UserLayout>, row| {
-                    let user_name = row.get_str_value("user_name");
-                    let user_layout = acc.entry(user_name.clone()).or_insert(UserLayout {
-                        user_name,
-                        groups: Vec::new(),
-                    });
-                    let group_name = row.get_str_value("group_name");
-                    user_layout.groups.push(group_name);
-                    acc
-                },
-            )
-            .into_values()
-            .collect::<Vec<UserLayout>>();
+        let mut layout_builder = HashMap::new();
+        for row in rows {
+            let user_name = row.get_str_value("user_name")?;
+            let group_name = row.get_str_value("group_name")?;
+            layout_builder
+                .entry(user_name.clone())
+                .or_insert_with(|| UserLayout {
+                    user_name,
+                    groups: Vec::new(),
+                })
+                .groups
+                .push(group_name);
+        }
+        let mut sortable_rows = layout_builder.into_values().collect::<Vec<UserLayout>>();
         sortable_rows.sort_by(|a, b| a.user_name.cmp(&b.user_name));
         Ok(sortable_rows)
     }
@@ -75,8 +72,15 @@ impl<T: DataRow + 'static, U: DataStore<T> + 'static> UserLayoutsService
     for UserLayoutsServiceImpl<T, U>
 {
     async fn get_user_layouts(&self, _: Request<()>) -> Result<Response<UserLayouts>, Status> {
-        let layouts: Vec<UserLayout> = self.get_layouts().await?;
-        Ok(Response::new(UserLayouts { layouts }))
+        match self.get_layouts().await {
+            Ok(layouts) => Ok(Response::new(UserLayouts { layouts })),
+            Err(e) => {
+                error!("{}", e);
+                Err(Status::internal(
+                    "Failed to retrieve user layouts. See server logs for details.",
+                ))
+            }
+        }
     }
 }
 
@@ -89,18 +93,38 @@ mod tests {
         group_name: String,
     }
     impl DataRow for TestRow {
-        fn get_bool_value(&self, _: &str) -> bool {
-            false
+        fn get_bool_value(&self, _: &str) -> Result<bool, DataStoreError> {
+            Ok(false)
         }
-        fn get_datetime_value(&self, _: &str) -> chrono::DateTime<chrono::Utc> {
-            chrono::Utc::now()
+        fn get_datetime_value(
+            &self,
+            _: &str,
+        ) -> Result<chrono::DateTime<chrono::Utc>, DataStoreError> {
+            Ok(chrono::Utc::now())
         }
-        fn get_str_value(&self, column_name: &str) -> String {
-            match column_name {
+
+        fn get_f32_value(&self, _: &str) -> Result<f32, DataStoreError> {
+            Ok(0.0)
+        }
+
+        fn get_f64_value(&self, _: &str) -> Result<f64, DataStoreError> {
+            Ok(0.0)
+        }
+
+        fn get_i32_value(&self, _: &str) -> Result<i32, DataStoreError> {
+            Ok(0)
+        }
+
+        fn get_i64_value(&self, _: &str) -> Result<i64, DataStoreError> {
+            Ok(0)
+        }
+
+        fn get_str_value(&self, column_name: &str) -> Result<String, DataStoreError> {
+            Ok(match column_name {
                 "user_name" => self.user_name.clone(),
                 "group_name" => self.group_name.clone(),
                 _ => String::new(),
-            }
+            })
         }
     }
 

@@ -1,9 +1,9 @@
 use std::{cmp::Ordering, collections::HashMap, marker::PhantomData};
 
 use tonic::{Request, Response, Status};
-use tracing::info;
+use tracing::{error, info};
 
-use crate::db::{DataRow, DataStore, DataStoreError};
+use rust_db_lib::{DataRow, DataStore, DataStoreError};
 
 pub mod proto {
     tonic::include_proto!("services.alarm_groups");
@@ -38,20 +38,27 @@ impl<T: DataRow, U: DataStore<T>> AlarmGroupsServiceImpl<T, U> {
         })
     }
 
-    fn create_metadatum(row: &T, name: String) -> AlarmGroupMetadatum {
-        AlarmGroupMetadatum {
+    fn create_metadatum(row: &T, name: String) -> Result<AlarmGroupMetadatum, DataStoreError> {
+        let description = row.get_str_value("description")?;
+        let updated_at = Self::convert_datetime_to_timestamp(row.get_datetime_value("updated_at")?);
+        let updated_by = row.get_str_value("updated_by")?;
+        let is_user_category = row.get_bool_value("group_is_user_category")?;
+        Ok(AlarmGroupMetadatum {
             name,
-            description: row.get_str_value("description"),
-            updated_at: Self::convert_datetime_to_timestamp(row.get_datetime_value("updated_at")),
-            updated_by: row.get_str_value("updated_by"),
-            is_user_category: row.get_bool_value("group_is_user_category"),
-        }
+            description,
+            updated_at,
+            updated_by,
+            is_user_category,
+        })
     }
 
-    fn rows_to_metadata(rows: Vec<T>) -> Vec<AlarmGroupMetadatum> {
-        rows.into_iter()
-            .map(|row| Self::create_metadatum(&row, row.get_str_value("group_name")))
-            .collect()
+    fn rows_to_metadata(rows: Vec<T>) -> Result<Vec<AlarmGroupMetadatum>, DataStoreError> {
+        let mut metadata = Vec::new();
+        for row in &rows {
+            let metadatum = Self::create_metadatum(row, row.get_str_value("group_name")?)?;
+            metadata.push(metadatum);
+        }
+        Ok(metadata)
     }
 
     /// Retrieves all alarm group metadata.
@@ -79,37 +86,32 @@ impl<T: DataRow, U: DataStore<T>> AlarmGroupsServiceImpl<T, U> {
         ",
         );
         let query_result = self.data_store.execute_query(alarm_group_query).await?;
-        let mut metadata = Self::rows_to_metadata(query_result);
+        let mut metadata = Self::rows_to_metadata(query_result)?;
         metadata.sort_by(|a, b| a.name.cmp(&b.name));
 
         Ok(metadata)
     }
 
-    fn rows_to_groups(rows: Vec<T>) -> Vec<AlarmGroup> {
-        rows.into_iter()
-            .fold(
-                HashMap::new(),
-                |mut accumulator: HashMap<String, AlarmGroup>, row: T| {
-                    let group_name = row.get_str_value("group_name");
-                    let alarm_group =
-                        accumulator
-                            .entry(group_name.clone())
-                            .or_insert_with(|| AlarmGroup {
-                                metadata: Some(Self::create_metadatum(&row, group_name)),
-                                devices: Vec::new(),
-                                groups: Vec::new(),
-                            });
-                    let member_name = row.get_str_value("member_name");
-                    if row.get_bool_value("member_is_group") {
-                        alarm_group.groups.push(member_name);
-                    } else {
-                        alarm_group.devices.push(member_name);
-                    }
-                    accumulator
-                },
-            )
-            .into_values()
-            .collect()
+    fn rows_to_groups(rows: Vec<T>) -> Result<Vec<AlarmGroup>, DataStoreError> {
+        let mut group_builder = HashMap::new();
+        for row in &rows {
+            let group_name = row.get_str_value("group_name")?;
+            let alarm_group =
+                group_builder
+                    .entry(group_name.clone())
+                    .or_insert_with(|| AlarmGroup {
+                        metadata: Some(Self::create_metadatum(row, group_name).unwrap()),
+                        devices: Vec::new(),
+                        groups: Vec::new(),
+                    });
+            let member_name = row.get_str_value("member_name")?;
+            if row.get_bool_value("member_is_group")? {
+                alarm_group.groups.push(member_name);
+            } else {
+                alarm_group.devices.push(member_name);
+            }
+        }
+        Ok(group_builder.into_values().collect())
     }
 
     fn sort_groups(a: &AlarmGroup, b: &AlarmGroup) -> Ordering {
@@ -187,7 +189,7 @@ impl<T: DataRow, U: DataStore<T>> AlarmGroupsServiceImpl<T, U> {
             .data_store
             .execute_parameterized_query(alarm_group_query, specified_groups)
             .await?;
-        let mut groups = Self::rows_to_groups(query_result);
+        let mut groups = Self::rows_to_groups(query_result)?;
         groups.sort_by(Self::sort_groups);
 
         Ok(groups)
@@ -205,9 +207,15 @@ impl<T: DataRow + 'static, U: DataStore<T> + 'static> AlarmGroupService
         &self,
         _: Request<()>,
     ) -> Result<Response<AlarmGroupMetadata>, Status> {
-        let metadata: Vec<AlarmGroupMetadatum> = self.get_all_metadata().await?;
-
-        Ok(Response::new(AlarmGroupMetadata { metadata }))
+        match self.get_all_metadata().await {
+            Ok(metadata) => Ok(Response::new(AlarmGroupMetadata { metadata })),
+            Err(e) => {
+                error!("{}", e);
+                Err(Status::internal(
+                    "Failed to retrieve alarm group metadata. See server logs for details.",
+                ))
+            }
+        }
     }
 
     async fn get_groups(
@@ -215,9 +223,15 @@ impl<T: DataRow + 'static, U: DataStore<T> + 'static> AlarmGroupService
         request: Request<GroupsRequest>,
     ) -> Result<Response<AlarmGroups>, Status> {
         let requested_groups = request.into_inner().groups;
-        let alarm_groups: Vec<AlarmGroup> = self.get_requested_groups(requested_groups).await?;
-
-        Ok(Response::new(AlarmGroups { alarm_groups }))
+        match self.get_requested_groups(requested_groups).await {
+            Ok(alarm_groups) => Ok(Response::new(AlarmGroups { alarm_groups })),
+            Err(e) => {
+                error!("{}", e);
+                Err(Status::internal(
+                    "Failed to retrieve alarm groups. See server logs for details.",
+                ))
+            }
+        }
     }
 }
 
@@ -249,27 +263,48 @@ mod tests {
         }
     }
     impl DataRow for TestRow {
-        fn get_bool_value(&self, column_name: &str) -> bool {
-            match column_name {
+        fn get_bool_value(&self, column_name: &str) -> Result<bool, DataStoreError> {
+            Ok(match column_name {
                 "group_is_user_category" => self.group_is_user_category,
                 "member_is_group" => self.member_is_group,
                 _ => false,
-            }
+            })
         }
-        fn get_datetime_value(&self, column_name: &str) -> chrono::DateTime<chrono::Utc> {
-            match column_name {
+
+        fn get_datetime_value(
+            &self,
+            column_name: &str,
+        ) -> Result<chrono::DateTime<chrono::Utc>, DataStoreError> {
+            Ok(match column_name {
                 "updated_at" => self.updated_at,
                 _ => chrono::Utc::now(),
-            }
+            })
         }
-        fn get_str_value(&self, column_name: &str) -> String {
-            match column_name {
+
+        fn get_f32_value(&self, _: &str) -> Result<f32, DataStoreError> {
+            Ok(0.0)
+        }
+
+        fn get_f64_value(&self, _: &str) -> Result<f64, DataStoreError> {
+            Ok(0.0)
+        }
+
+        fn get_i32_value(&self, _: &str) -> Result<i32, DataStoreError> {
+            Ok(0)
+        }
+
+        fn get_i64_value(&self, _: &str) -> Result<i64, DataStoreError> {
+            Ok(0)
+        }
+
+        fn get_str_value(&self, column_name: &str) -> Result<String, DataStoreError> {
+            Ok(match column_name {
                 "group_name" => self.group_name.clone(),
                 "description" => self.description.clone(),
                 "member_name" => self.member_name.clone(),
                 "updated_by" => self.updated_by.clone(),
                 _ => "".to_string(),
-            }
+            })
         }
     }
 

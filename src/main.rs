@@ -9,8 +9,7 @@ use tracing::info;
 
 mod logging;
 
-mod db;
-use db::{DataRow, DataStore, postgres::PostgresDataStore};
+use rust_db_lib::{DataRow, DataStore, postgres::PostgresDataStore};
 
 mod services;
 use services::alarm_groups::{
@@ -77,20 +76,40 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::db::DataStoreError;
+    use rust_db_lib::DataStoreError;
     use std::time::Duration;
     use tokio::time::timeout;
 
     struct TestRow;
     impl DataRow for TestRow {
-        fn get_bool_value(&self, _: &str) -> bool {
-            false
+        fn get_bool_value(&self, _: &str) -> Result<bool, DataStoreError> {
+            Ok(false)
         }
-        fn get_datetime_value(&self, _: &str) -> chrono::DateTime<chrono::Utc> {
-            chrono::Utc::now()
+        fn get_datetime_value(
+            &self,
+            _: &str,
+        ) -> Result<chrono::DateTime<chrono::Utc>, DataStoreError> {
+            Ok(chrono::Utc::now())
         }
-        fn get_str_value(&self, column_name: &str) -> String {
-            column_name.to_string()
+
+        fn get_f32_value(&self, _: &str) -> Result<f32, DataStoreError> {
+            Ok(0.0)
+        }
+
+        fn get_f64_value(&self, _: &str) -> Result<f64, DataStoreError> {
+            Ok(0.0)
+        }
+
+        fn get_i32_value(&self, _: &str) -> Result<i32, DataStoreError> {
+            Ok(0)
+        }
+
+        fn get_i64_value(&self, _: &str) -> Result<i64, DataStoreError> {
+            Ok(0)
+        }
+
+        fn get_str_value(&self, column_name: &str) -> Result<String, DataStoreError> {
+            Ok(column_name.to_string())
         }
     }
     struct TestDataStore;
