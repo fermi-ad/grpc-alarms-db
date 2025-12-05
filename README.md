@@ -4,6 +4,7 @@ This service provides access to persistent data in the context of accelerator al
 
 ## Table of Contents
 - [Supported endpoints](#supported-endpoints)
+- [Environment Variables](#environment-variables)
 - [Sustainability](#sustainability)
   - [Development note](#development-note)
 - [Rust docs](#rust-docs)
@@ -20,6 +21,14 @@ Currently, the following methods are provided via gRPC. Full schema descriptions
 - `getUserLayouts() -> UserLayouts`
   - Method that takes no parameters and returns all user layouts. 
   - A `UserLayout` is the set of all top-level groups that a specific user has configured for their alarm screen. If a device in the group or a subgroup goes into alarm, it will appear in a category with the top-level group's name. 
+
+## Environment Variables
+The following variables must be set for this service to run:
+- `DATABASE_HOST` - The host of the database, e.g. `localhost`, `10.32.12.53`, `fermi-db.fnal.gov`, etc.
+- `DATABASE_PORT` - The port to use on the host. Must parse to an unsigned 16-bit integer.
+- `DATABASE_USER` - The username to use when connecting to the database.
+- `DATABASE_PASS` - The password for the desired user.
+- `DATABASE_NAME` - The name of the database being connected to, e.g. `adbs`
 
 ## Sustainability
 
