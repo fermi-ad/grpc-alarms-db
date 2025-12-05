@@ -22,7 +22,7 @@ prost = "0.14.1"
 prost-types = "0.14.1"
 
 # This crate provides access to PostgreSQL.
-sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "postgres", "json", "chrono"] }
+rust-db-lib = { git = "https://github.com/fermi-ad/rust-db-lib.git", tag = "v1.0.0" }
 
 # This crate generates current date and time
 chrono = { version = "0.4", features = ["serde"] }
