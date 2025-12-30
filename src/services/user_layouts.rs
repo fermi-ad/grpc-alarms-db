@@ -8,19 +8,23 @@ pub mod proto {
 }
 use proto::{UserLayout, UserLayouts, user_layouts_service_server::UserLayoutsService};
 
-use rust_db_lib::{DataRow, DataStore, DataStoreError};
+use rust_db_lib::{DataRow, DataStore, DataStoreError, DataVal};
 
 /// A service wrapping a DataStore to provide alarm list information, and implementing the Protobuf-defined gRPC service.
-pub struct UserLayoutsServiceImpl<T: DataRow, U: DataStore<T>> {
-    data_store: Box<U>,
-    _row_type: PhantomData<T>,
+pub struct UserLayoutsServiceImpl<T: DataVal, U: DataRow<T>, V: DataStore<T, U>> {
+    data_store: V,
+    _row_type: PhantomData<U>,
+    _val_type: PhantomData<T>,
 }
 
-impl<T: DataRow, U: DataStore<T>> UserLayoutsServiceImpl<T, U> {
-    pub fn new(data_store: Box<U>) -> Self {
+impl<T: DataVal + 'static, U: DataRow<T> + 'static, V: DataStore<T, U> + 'static>
+    UserLayoutsServiceImpl<T, U, V>
+{
+    pub fn new(data_store: V) -> Self {
         Self {
             data_store,
             _row_type: PhantomData,
+            _val_type: PhantomData,
         }
     }
 
@@ -47,8 +51,8 @@ impl<T: DataRow, U: DataStore<T>> UserLayoutsServiceImpl<T, U> {
         let rows = self.data_store.execute_query(layout_query).await?;
         let mut layout_builder = HashMap::new();
         for row in rows {
-            let user_name = row.get_str_value("user_name")?;
-            let group_name = row.get_str_value("group_name")?;
+            let user_name = row.get("user_name").to_string()?;
+            let group_name = row.get("group_name").to_string()?;
             layout_builder
                 .entry(user_name.clone())
                 .or_insert_with(|| UserLayout {
@@ -68,8 +72,8 @@ impl<T: DataRow, U: DataStore<T>> UserLayoutsServiceImpl<T, U> {
 ///
 /// Translates query results from the DataStore into gRPC AlarmList messages.
 #[tonic::async_trait]
-impl<T: DataRow + 'static, U: DataStore<T> + 'static> UserLayoutsService
-    for UserLayoutsServiceImpl<T, U>
+impl<T: DataVal + 'static, U: DataRow<T> + 'static, V: DataStore<T, U> + 'static> UserLayoutsService
+    for UserLayoutsServiceImpl<T, U, V>
 {
     async fn get_user_layouts(&self, _: Request<()>) -> Result<Response<UserLayouts>, Status> {
         match self.get_layouts().await {
@@ -87,44 +91,27 @@ impl<T: DataRow + 'static, U: DataStore<T> + 'static> UserLayoutsService
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rust_db_lib::test_utils::TestVal;
 
     struct TestRow {
         user_name: String,
         group_name: String,
     }
-    impl DataRow for TestRow {
-        fn get_bool_value(&self, _: &str) -> Result<bool, DataStoreError> {
-            Ok(false)
-        }
-        fn get_datetime_value(
-            &self,
-            _: &str,
-        ) -> Result<chrono::DateTime<chrono::Utc>, DataStoreError> {
-            Ok(chrono::Utc::now())
-        }
-
-        fn get_f32_value(&self, _: &str) -> Result<f32, DataStoreError> {
-            Ok(0.0)
-        }
-
-        fn get_f64_value(&self, _: &str) -> Result<f64, DataStoreError> {
-            Ok(0.0)
-        }
-
-        fn get_i32_value(&self, _: &str) -> Result<i32, DataStoreError> {
-            Ok(0)
-        }
-
-        fn get_i64_value(&self, _: &str) -> Result<i64, DataStoreError> {
-            Ok(0)
-        }
-
-        fn get_str_value(&self, column_name: &str) -> Result<String, DataStoreError> {
-            Ok(match column_name {
-                "user_name" => self.user_name.clone(),
-                "group_name" => self.group_name.clone(),
-                _ => String::new(),
-            })
+    impl DataRow<TestVal> for TestRow {
+        fn get(&self, column_name: &str) -> TestVal {
+            match column_name {
+                "user_name" => {
+                    let mut result = TestVal::new();
+                    result.test_string = Some(self.user_name.clone());
+                    result
+                }
+                "group_name" => {
+                    let mut result = TestVal::new();
+                    result.test_string = Some(self.group_name.clone());
+                    result
+                }
+                _ => TestVal::new(),
+            }
         }
     }
 
@@ -135,7 +122,7 @@ mod tests {
         }
     }
     #[tonic::async_trait]
-    impl DataStore<TestRow> for TestDataStore {
+    impl DataStore<TestVal, TestRow> for TestDataStore {
         async fn execute_query(&self, _: String) -> Result<Vec<TestRow>, DataStoreError> {
             Ok(vec![
                 TestRow {
@@ -160,8 +147,9 @@ mod tests {
     #[tokio::test]
     async fn test_get_user_layouts() {
         let service = UserLayoutsServiceImpl {
-            data_store: Box::new(TestDataStore),
+            data_store: TestDataStore {},
             _row_type: PhantomData,
+            _val_type: PhantomData,
         };
         let result = service.get_user_layouts(Request::new(())).await;
         assert!(result.is_ok());

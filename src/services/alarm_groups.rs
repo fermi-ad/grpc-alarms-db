@@ -3,7 +3,7 @@ use std::{cmp::Ordering, collections::HashMap, marker::PhantomData};
 use tonic::{Request, Response, Status};
 use tracing::{error, info};
 
-use rust_db_lib::{DataRow, DataStore, DataStoreError};
+use rust_db_lib::{DataRow, DataStore, DataStoreError, DataVal};
 
 pub mod proto {
     tonic::include_proto!("services.alarm_groups");
@@ -16,49 +16,89 @@ use proto::{
 };
 
 /// A service wrapping a DataStore to provide alarm group information, and implementing the Protobuf-defined gRPC service.
-pub struct AlarmGroupsServiceImpl<T: DataRow, U: DataStore<T>> {
-    data_store: Box<U>,
-    _row_type: PhantomData<T>,
+pub struct AlarmGroupsServiceImpl<T: DataVal, U: DataRow<T>, V: DataStore<T, U>> {
+    data_store: V,
+    _row_type: PhantomData<U>,
+    _val_type: PhantomData<T>,
 }
 
-impl<T: DataRow, U: DataStore<T>> AlarmGroupsServiceImpl<T, U> {
-    pub fn new(data_store: Box<U>) -> Self {
+fn convert_datetime_to_timestamp(
+    datetime: chrono::DateTime<chrono::Utc>,
+) -> Option<prost_types::Timestamp> {
+    Some(prost_types::Timestamp {
+        seconds: datetime.timestamp(),
+        nanos: datetime.timestamp_subsec_nanos() as i32,
+    })
+}
+
+fn create_metadatum<T: DataVal, U: DataRow<T>>(
+    row: &U,
+    name: String,
+) -> Result<AlarmGroupMetadatum, DataStoreError> {
+    let description = row.get("description").to_string()?;
+    let updated_at = convert_datetime_to_timestamp(row.get("updated_at").to_datetime()?);
+    let updated_by = row.get("updated_by").to_string()?;
+    let is_user_category = row.get("group_is_user_category").to_bool()?;
+    Ok(AlarmGroupMetadatum {
+        name,
+        description,
+        updated_at,
+        updated_by,
+        is_user_category,
+    })
+}
+
+fn rows_to_metadata<T: DataVal, U: DataRow<T>>(
+    rows: Vec<U>,
+) -> Result<Vec<AlarmGroupMetadatum>, DataStoreError> {
+    let mut metadata = Vec::new();
+    for row in &rows {
+        let metadatum = create_metadatum(row, row.get("group_name").to_string()?)?;
+        metadata.push(metadatum);
+    }
+    Ok(metadata)
+}
+
+fn rows_to_groups<T: DataVal, U: DataRow<T>>(
+    rows: Vec<U>,
+) -> Result<Vec<AlarmGroup>, DataStoreError> {
+    let mut group_builder = HashMap::new();
+    for row in &rows {
+        let group_name = row.get("group_name").to_string()?;
+        let alarm_group = group_builder
+            .entry(group_name.clone())
+            .or_insert_with(|| AlarmGroup {
+                metadata: create_metadatum(row, group_name).ok(),
+                devices: Vec::new(),
+                groups: Vec::new(),
+            });
+        let member_name = row.get("member_name").to_string()?;
+        if row.get("member_is_group").to_bool()? {
+            alarm_group.groups.push(member_name);
+        } else {
+            alarm_group.devices.push(member_name);
+        }
+    }
+    Ok(group_builder.into_values().collect())
+}
+
+fn sort_groups(a: &AlarmGroup, b: &AlarmGroup) -> Ordering {
+    match a.metadata.as_ref() {
+        Some(group) => match b.metadata.as_ref() {
+            Some(other_group) => group.name.cmp(&other_group.name),
+            None => Ordering::Less,
+        },
+        None => Ordering::Greater,
+    }
+}
+
+impl<T: DataVal, U: DataRow<T>, V: DataStore<T, U>> AlarmGroupsServiceImpl<T, U, V> {
+    pub fn new(data_store: V) -> Self {
         Self {
             data_store,
             _row_type: PhantomData,
+            _val_type: PhantomData,
         }
-    }
-
-    fn convert_datetime_to_timestamp(
-        datetime: chrono::DateTime<chrono::Utc>,
-    ) -> Option<prost_types::Timestamp> {
-        Some(prost_types::Timestamp {
-            seconds: datetime.timestamp(),
-            nanos: datetime.timestamp_subsec_nanos() as i32,
-        })
-    }
-
-    fn create_metadatum(row: &T, name: String) -> Result<AlarmGroupMetadatum, DataStoreError> {
-        let description = row.get_str_value("description")?;
-        let updated_at = Self::convert_datetime_to_timestamp(row.get_datetime_value("updated_at")?);
-        let updated_by = row.get_str_value("updated_by")?;
-        let is_user_category = row.get_bool_value("group_is_user_category")?;
-        Ok(AlarmGroupMetadatum {
-            name,
-            description,
-            updated_at,
-            updated_by,
-            is_user_category,
-        })
-    }
-
-    fn rows_to_metadata(rows: Vec<T>) -> Result<Vec<AlarmGroupMetadatum>, DataStoreError> {
-        let mut metadata = Vec::new();
-        for row in &rows {
-            let metadatum = Self::create_metadatum(row, row.get_str_value("group_name")?)?;
-            metadata.push(metadatum);
-        }
-        Ok(metadata)
     }
 
     /// Retrieves all alarm group metadata.
@@ -86,42 +126,10 @@ impl<T: DataRow, U: DataStore<T>> AlarmGroupsServiceImpl<T, U> {
         ",
         );
         let query_result = self.data_store.execute_query(alarm_group_query).await?;
-        let mut metadata = Self::rows_to_metadata(query_result)?;
+        let mut metadata = rows_to_metadata(query_result)?;
         metadata.sort_by(|a, b| a.name.cmp(&b.name));
 
         Ok(metadata)
-    }
-
-    fn rows_to_groups(rows: Vec<T>) -> Result<Vec<AlarmGroup>, DataStoreError> {
-        let mut group_builder = HashMap::new();
-        for row in &rows {
-            let group_name = row.get_str_value("group_name")?;
-            let alarm_group =
-                group_builder
-                    .entry(group_name.clone())
-                    .or_insert_with(|| AlarmGroup {
-                        metadata: Some(Self::create_metadatum(row, group_name).unwrap()),
-                        devices: Vec::new(),
-                        groups: Vec::new(),
-                    });
-            let member_name = row.get_str_value("member_name")?;
-            if row.get_bool_value("member_is_group")? {
-                alarm_group.groups.push(member_name);
-            } else {
-                alarm_group.devices.push(member_name);
-            }
-        }
-        Ok(group_builder.into_values().collect())
-    }
-
-    fn sort_groups(a: &AlarmGroup, b: &AlarmGroup) -> Ordering {
-        match a.metadata.as_ref() {
-            Some(group) => match b.metadata.as_ref() {
-                Some(other_group) => group.name.cmp(&other_group.name),
-                None => Ordering::Less,
-            },
-            None => Ordering::Greater,
-        }
     }
 
     async fn get_requested_groups(
@@ -189,8 +197,8 @@ impl<T: DataRow, U: DataStore<T>> AlarmGroupsServiceImpl<T, U> {
             .data_store
             .execute_parameterized_query(alarm_group_query, specified_groups)
             .await?;
-        let mut groups = Self::rows_to_groups(query_result)?;
-        groups.sort_by(Self::sort_groups);
+        let mut groups = rows_to_groups(query_result)?;
+        groups.sort_by(sort_groups);
 
         Ok(groups)
     }
@@ -200,8 +208,8 @@ impl<T: DataRow, U: DataStore<T>> AlarmGroupsServiceImpl<T, U> {
 ///
 /// Translates query results from the DataStore into gRPC AlarmGroup messages.
 #[tonic::async_trait]
-impl<T: DataRow + 'static, U: DataStore<T> + 'static> AlarmGroupService
-    for AlarmGroupsServiceImpl<T, U>
+impl<T: DataVal + 'static, U: DataRow<T> + 'static, V: DataStore<T, U> + 'static> AlarmGroupService
+    for AlarmGroupsServiceImpl<T, U, V>
 {
     async fn get_group_metadata(
         &self,
@@ -239,6 +247,7 @@ impl<T: DataRow + 'static, U: DataStore<T> + 'static> AlarmGroupService
 mod tests {
     use super::*;
     use chrono::TimeZone;
+    use rust_db_lib::test_utils::TestVal;
 
     struct TestRow {
         group_name: String,
@@ -262,49 +271,46 @@ mod tests {
             }
         }
     }
-    impl DataRow for TestRow {
-        fn get_bool_value(&self, column_name: &str) -> Result<bool, DataStoreError> {
-            Ok(match column_name {
-                "group_is_user_category" => self.group_is_user_category,
-                "member_is_group" => self.member_is_group,
-                _ => false,
-            })
-        }
-
-        fn get_datetime_value(
-            &self,
-            column_name: &str,
-        ) -> Result<chrono::DateTime<chrono::Utc>, DataStoreError> {
-            Ok(match column_name {
-                "updated_at" => self.updated_at,
-                _ => chrono::Utc::now(),
-            })
-        }
-
-        fn get_f32_value(&self, _: &str) -> Result<f32, DataStoreError> {
-            Ok(0.0)
-        }
-
-        fn get_f64_value(&self, _: &str) -> Result<f64, DataStoreError> {
-            Ok(0.0)
-        }
-
-        fn get_i32_value(&self, _: &str) -> Result<i32, DataStoreError> {
-            Ok(0)
-        }
-
-        fn get_i64_value(&self, _: &str) -> Result<i64, DataStoreError> {
-            Ok(0)
-        }
-
-        fn get_str_value(&self, column_name: &str) -> Result<String, DataStoreError> {
-            Ok(match column_name {
-                "group_name" => self.group_name.clone(),
-                "description" => self.description.clone(),
-                "member_name" => self.member_name.clone(),
-                "updated_by" => self.updated_by.clone(),
-                _ => "".to_string(),
-            })
+    impl DataRow<TestVal> for TestRow {
+        fn get(&self, column_name: &str) -> TestVal {
+            match column_name {
+                "description" => {
+                    let mut val = TestVal::new();
+                    val.test_string = Some(self.description.clone());
+                    val
+                }
+                "group_is_user_category" => {
+                    let mut val = TestVal::new();
+                    val.test_bool = Some(self.group_is_user_category.clone());
+                    val
+                }
+                "group_name" => {
+                    let mut val = TestVal::new();
+                    val.test_string = Some(self.group_name.clone());
+                    val
+                }
+                "member_is_group" => {
+                    let mut val = TestVal::new();
+                    val.test_bool = Some(self.member_is_group.clone());
+                    val
+                }
+                "member_name" => {
+                    let mut val = TestVal::new();
+                    val.test_string = Some(self.member_name.clone());
+                    val
+                }
+                "updated_at" => {
+                    let mut val = TestVal::new();
+                    val.test_datetime = Some(self.updated_at.clone());
+                    val
+                }
+                "updated_by" => {
+                    let mut val = TestVal::new();
+                    val.test_string = Some(self.updated_by.clone());
+                    val
+                }
+                _ => TestVal::new(),
+            }
         }
     }
 
@@ -351,7 +357,7 @@ mod tests {
         }
     }
     #[tonic::async_trait]
-    impl DataStore<TestRow> for TestDataStore {
+    impl DataStore<TestVal, TestRow> for TestDataStore {
         async fn execute_query(&self, _: String) -> Result<Vec<TestRow>, DataStoreError> {
             Ok(vec![self.row1.clone(), self.row2.clone()])
         }
@@ -367,8 +373,9 @@ mod tests {
     #[tokio::test]
     async fn test_get_group_metadata() {
         let service = AlarmGroupsServiceImpl {
-            data_store: Box::new(TestDataStore::new()),
+            data_store: TestDataStore::new(),
             _row_type: PhantomData,
+            _val_type: PhantomData,
         };
         let result = service.get_group_metadata(Request::new(())).await;
         assert!(result.is_ok());
@@ -397,8 +404,9 @@ mod tests {
     #[tokio::test]
     async fn test_get_groups() {
         let service = AlarmGroupsServiceImpl {
-            data_store: Box::new(TestDataStore::new()),
+            data_store: TestDataStore::new(),
             _row_type: PhantomData,
+            _val_type: PhantomData,
         };
         let result = service
             .get_groups(Request::new(GroupsRequest {

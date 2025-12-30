@@ -9,7 +9,7 @@ use tracing::info;
 
 mod logging;
 
-use rust_db_lib::{DataRow, DataStore, postgres::PostgresDataStore};
+use rust_db_lib::{DataRow, DataStore, DataVal, postgres::PostgresDataStore};
 
 mod services;
 use services::alarm_groups::{
@@ -26,23 +26,26 @@ fn generate_server_address() -> Result<SocketAddr, Box<dyn std::error::Error>> {
     Ok(addr)
 }
 
-async fn start_server<T: DataRow + 'static, U: DataStore<T> + 'static>(
-    data_store: U,
+async fn start_server<
+    T: DataVal + 'static,
+    U: DataRow<T> + 'static,
+    V: DataStore<T, U> + 'static,
+>(
+    data_store: V,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let user_layouts_service =
-        UserLayoutsServiceServer::new(UserLayoutsServiceImpl::new(Box::new(data_store.clone()))); // Remember to clone the data store when adding new services
-    let alarm_group_service =
-        AlarmGroupServiceServer::new(AlarmGroupsServiceImpl::new(Box::new(data_store)));
+        UserLayoutsServiceServer::new(UserLayoutsServiceImpl::new(data_store.clone())); // Remember to clone the data store when adding new services
+    let alarm_group_service = AlarmGroupServiceServer::new(AlarmGroupsServiceImpl::new(data_store));
     let reflection_service = ReflectionBuilder::configure()
         .register_encoded_file_descriptor_set(proto::FILE_DESCRIPTOR_SET)
         .build_v1()
         .unwrap();
     let (health_reporter, health_service) = tonic_health::server::health_reporter();
     health_reporter
-        .set_serving::<UserLayoutsServiceServer<U>>()
+        .set_serving::<UserLayoutsServiceServer<V>>()
         .await;
     health_reporter
-        .set_serving::<AlarmGroupServiceServer<U>>()
+        .set_serving::<AlarmGroupServiceServer<V>>()
         .await;
     let result = Server::builder()
         .add_service(user_layouts_service)
@@ -52,15 +55,12 @@ async fn start_server<T: DataRow + 'static, U: DataStore<T> + 'static>(
         .serve(generate_server_address().unwrap())
         .await;
     health_reporter
-        .set_not_serving::<UserLayoutsServiceServer<U>>()
+        .set_not_serving::<UserLayoutsServiceServer<V>>()
         .await;
     health_reporter
-        .set_not_serving::<AlarmGroupServiceServer<U>>()
+        .set_not_serving::<AlarmGroupServiceServer<V>>()
         .await;
-    match result {
-        Ok(_) => Ok(()),
-        Err(e) => Err(Box::new(e)),
-    }
+    Ok(result?)
 }
 
 #[tokio::main]
@@ -76,45 +76,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rust_db_lib::DataStoreError;
+    use rust_db_lib::{DataStoreError, test_utils::TestVal};
     use std::time::Duration;
     use tokio::time::timeout;
 
     struct TestRow;
-    impl DataRow for TestRow {
-        fn get_bool_value(&self, _: &str) -> Result<bool, DataStoreError> {
-            Ok(false)
-        }
-        fn get_datetime_value(
-            &self,
-            _: &str,
-        ) -> Result<chrono::DateTime<chrono::Utc>, DataStoreError> {
-            Ok(chrono::Utc::now())
-        }
-
-        fn get_f32_value(&self, _: &str) -> Result<f32, DataStoreError> {
-            Ok(0.0)
-        }
-
-        fn get_f64_value(&self, _: &str) -> Result<f64, DataStoreError> {
-            Ok(0.0)
-        }
-
-        fn get_i32_value(&self, _: &str) -> Result<i32, DataStoreError> {
-            Ok(0)
-        }
-
-        fn get_i64_value(&self, _: &str) -> Result<i64, DataStoreError> {
-            Ok(0)
-        }
-
-        fn get_str_value(&self, column_name: &str) -> Result<String, DataStoreError> {
-            Ok(column_name.to_string())
+    impl DataRow<TestVal> for TestRow {
+        fn get(&self, _: &str) -> TestVal {
+            TestVal::new()
         }
     }
     struct TestDataStore;
     #[tonic::async_trait]
-    impl DataStore<TestRow> for TestDataStore {
+    impl DataStore<TestVal, TestRow> for TestDataStore {
         async fn execute_query(&self, _: String) -> Result<Vec<TestRow>, DataStoreError> {
             Ok(vec![])
         }
