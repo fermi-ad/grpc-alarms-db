@@ -21,23 +21,20 @@ tonic-reflection = "0.14.2"
 prost = "0.14.1"
 prost-types = "0.14.1"
 
+# This crate provides ergonomic environment variable interaction
+rust-env-var-lib = { git = "https://github.com/fermi-ad/rust-env-var-lib.git", tag = "v1.1.0" }
+
 # This crate provides access to PostgreSQL.
-rust-db-lib = { git = "https://github.com/fermi-ad/rust-db-lib.git", tag = "v3.1.0" }
+rust-db-lib = { git = "https://github.com/fermi-ad/rust-db-lib.git", tag = "v3.1.1" }
 
 # This crate generates current date and time
 chrono = { version = "0.4", features = ["serde"] }
-
-# This crate is used to load environment variables from a .env file
-dotenv = "0.15"
 
 [build-dependencies]
 
 # This crate translates protobuf source files into a Rust module.
 tonic-prost-build = "0.14.2"
 protoc-bin-vendored = "3.2"
-
-[profile.dev.package.sqlx-macros]
-opt-level = 3
 
 [profile.release]
 opt-level = 'z'

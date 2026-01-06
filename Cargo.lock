@@ -290,12 +290,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "dotenv"
-version = "0.15.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "77c90badedccf4105eca100756a0b1289e191f6fcbdadd3cee1d2f614f97da8f"
-
-[[package]]
 name = "dotenvy"
 version = "0.15.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -508,11 +502,11 @@ name = "grpc-alarms-db"
 version = "0.2.0"
 dependencies = [
  "chrono",
- "dotenv",
  "prost",
  "prost-types",
  "protoc-bin-vendored",
  "rust-db-lib",
+ "rust-env-var-lib",
  "tokio",
  "tonic",
  "tonic-health",
@@ -1438,12 +1432,20 @@ dependencies = [
 
 [[package]]
 name = "rust-db-lib"
-version = "3.1.0"
-source = "git+https://github.com/fermi-ad/rust-db-lib.git?tag=v3.1.0#9e33f24893049a977d5896310ac3764277aef787"
+version = "3.1.1"
+source = "git+https://github.com/fermi-ad/rust-db-lib.git?tag=v3.1.1#2c91a1e12b0e678e3f42949abb94019fe3d06e1c"
 dependencies = [
  "async-trait",
  "chrono",
  "sqlx",
+ "tracing",
+]
+
+[[package]]
+name = "rust-env-var-lib"
+version = "1.1.0"
+source = "git+https://github.com/fermi-ad/rust-env-var-lib.git?tag=v1.1.0#b6f9430566b48f4a6a82342159f8e49322cb5b18"
+dependencies = [
  "tracing",
 ]
 
@@ -1666,6 +1668,8 @@ dependencies = [
  "sha2",
  "smallvec",
  "thiserror",
+ "tokio",
+ "tokio-stream",
  "tracing",
  "url",
 ]
@@ -1704,6 +1708,7 @@ dependencies = [
  "sqlx-postgres",
  "sqlx-sqlite",
  "syn",
+ "tokio",
  "url",
 ]
 

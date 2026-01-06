@@ -1,8 +1,4 @@
-use dotenv::dotenv;
-use std::{
-    env,
-    net::{IpAddr, Ipv6Addr, SocketAddr},
-};
+use std::net::{IpAddr, Ipv6Addr, SocketAddr};
 use tonic::transport::Server;
 use tonic_reflection::server::Builder as ReflectionBuilder;
 use tracing::info;
@@ -10,6 +6,8 @@ use tracing::info;
 mod logging;
 
 use rust_db_lib::{DataRow, DataStore, DataVal, postgres::PostgresDataStore};
+
+use rust_env_var_lib::env_var;
 
 mod services;
 use services::alarm_groups::{
@@ -20,7 +18,7 @@ use services::user_layouts::{
 };
 
 fn generate_server_address() -> Result<SocketAddr, Box<dyn std::error::Error>> {
-    let port: u16 = env::var("ALARM_GRPC_SERVER_PORT")?.parse()?;
+    let port = env_var::get("ALARM_GRPC_SERVER_PORT").or(7055_u16);
     let addr = SocketAddr::new(IpAddr::V6(Ipv6Addr::UNSPECIFIED), port);
     info!("***** Alarm gRPC Server is running at: {} *******", addr);
     Ok(addr)
@@ -65,8 +63,6 @@ async fn start_server<
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    dotenv().ok();
-
     logging::setup_logging();
 
     let data_store = PostgresDataStore::new().await;
@@ -108,7 +104,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_start_server() {
-        dotenv().ok();
         let data_store = TestDataStore {};
         let future = start_server(data_store);
         let result = timeout(Duration::from_secs(1), future).await;
