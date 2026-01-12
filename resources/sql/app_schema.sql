@@ -54,3 +54,17 @@ CREATE TABLE alarmsapp.user_layouts (
 CREATE TRIGGER set_updated_at_trigger
 BEFORE INSERT OR UPDATE ON alarmsapp.user_layouts 
 FOR EACH ROW EXECUTE PROCEDURE alarmsapp.set_updated_at();
+
+-- Generate the table that holds the timer information (snooze, bypass reminder, etc.). --
+CREATE TABLE alarmsapp.timers (
+	device VARCHAR(250),
+	end_time TIMESTAMP NOT NULL,
+	timer_type TEXT NOT NULL,
+	updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+	updated_by CITEXT NOT NULL,
+	PRIMARY KEY (device, timer_type)
+);
+
+CREATE TRIGGER set_updated_at_trigger
+BEFORE INSERT OR UPDATE ON alarmsapp.timers
+FOR EACH ROW EXECUTE PROCEDURE alarmsapp.set_updated_at();
