@@ -1,34 +1,28 @@
-use std::{cmp::Ordering, collections::HashMap, marker::PhantomData};
-
-use tonic::{Request, Response, Status};
-use tracing::{error, info};
-
-use rust_db_lib::{DataRow, DataStore, DataStoreError, DataVal};
-
-pub mod proto {
+mod proto {
     tonic::include_proto!("services.alarm_groups");
-    pub(crate) const FILE_DESCRIPTOR_SET: &[u8] =
-        tonic::include_file_descriptor_set!("alarmprotos_descriptor");
 }
+pub use proto::alarm_group_service_server::AlarmGroupServiceServer;
 use proto::{
     AlarmGroup, AlarmGroupMetadata, AlarmGroupMetadatum, AlarmGroups, GroupsRequest,
     alarm_group_service_server::AlarmGroupService,
 };
 
-/// A service wrapping a DataStore to provide alarm group information, and implementing the Protobuf-defined gRPC service.
+use rust_db_lib::{
+    DataRow, DataStore, DataStoreError, DataVal, ParameterizedQuery, QueryParameter,
+};
+
+use std::{cmp::Ordering, collections::HashMap, marker::PhantomData};
+
+use tonic::{Request, Response, Status};
+use tracing::{error, info};
+
+use crate::utils;
+
+/// A service wrapping a [`DataStore`] to provide alarm group information, and implementing the Protobuf-defined gRPC service.
 pub struct AlarmGroupsServiceImpl<T: DataVal, U: DataRow<T>, V: DataStore<T, U>> {
     data_store: V,
     _row_type: PhantomData<U>,
     _val_type: PhantomData<T>,
-}
-
-fn convert_datetime_to_timestamp(
-    datetime: chrono::DateTime<chrono::Utc>,
-) -> Option<prost_types::Timestamp> {
-    Some(prost_types::Timestamp {
-        seconds: datetime.timestamp(),
-        nanos: datetime.timestamp_subsec_nanos() as i32,
-    })
 }
 
 fn create_metadatum<T: DataVal, U: DataRow<T>>(
@@ -36,7 +30,7 @@ fn create_metadatum<T: DataVal, U: DataRow<T>>(
     name: String,
 ) -> Result<AlarmGroupMetadatum, DataStoreError> {
     let description = row.get("description").to_string()?;
-    let updated_at = convert_datetime_to_timestamp(row.get("updated_at").to_datetime()?);
+    let updated_at = utils::datetime_to_timestamp(row.get("updated_at").to_datetime()?);
     let updated_by = row.get("updated_by").to_string()?;
     let is_user_category = row.get("group_is_user_category").to_bool()?;
     Ok(AlarmGroupMetadatum {
@@ -105,8 +99,7 @@ impl<T: DataVal, U: DataRow<T>, V: DataStore<T, U>> AlarmGroupsServiceImpl<T, U,
     async fn get_all_metadata(&self) -> Result<Vec<AlarmGroupMetadatum>, DataStoreError> {
         info!("Query for all alarm group metadata ");
 
-        let alarm_group_query = String::from(
-            "
+        let alarm_group_query = "
             SELECT 
                 g.group_name,
                 g.description,
@@ -123,8 +116,7 @@ impl<T: DataVal, U: DataRow<T>, V: DataStore<T, U>> AlarmGroupsServiceImpl<T, U,
                 updated_by,
                 group_name
             ;
-        ",
-        );
+        ";
         let query_result = self.data_store.execute_query(alarm_group_query).await?;
         let mut metadata = rows_to_metadata(query_result)?;
         metadata.sort_by(|a, b| a.name.cmp(&b.name));
@@ -193,9 +185,14 @@ impl<T: DataVal, U: DataRow<T>, V: DataStore<T, U>> AlarmGroupsServiceImpl<T, U,
             needed_placeholders.join(", ")
         );
 
+        let mut query_builder = ParameterizedQuery::new(alarm_group_query);
+        for group in specified_groups {
+            query_builder.bind(QueryParameter::STR(group));
+        }
+
         let query_result = self
             .data_store
-            .execute_parameterized_query(alarm_group_query, specified_groups)
+            .execute_parameterized_query(query_builder)
             .await?;
         let mut groups = rows_to_groups(query_result)?;
         groups.sort_by(sort_groups);
@@ -204,13 +201,11 @@ impl<T: DataVal, U: DataRow<T>, V: DataStore<T, U>> AlarmGroupsServiceImpl<T, U,
     }
 }
 
-/// Implements the AlarmGroupService gRPC service.
-///
-/// Translates query results from the DataStore into gRPC AlarmGroup messages.
 #[tonic::async_trait]
 impl<T: DataVal + 'static, U: DataRow<T> + 'static, V: DataStore<T, U> + 'static> AlarmGroupService
     for AlarmGroupsServiceImpl<T, U, V>
 {
+    /// Retrieves [`AlarmGroupMetadata`] for all alarm groups.
     async fn get_group_metadata(
         &self,
         _: Request<()>,
@@ -226,6 +221,7 @@ impl<T: DataVal + 'static, U: DataRow<T> + 'static, V: DataStore<T, U> + 'static
         }
     }
 
+    /// Retrieves full [`AlarmGroup`] information for the specified groups.
     async fn get_groups(
         &self,
         request: Request<GroupsRequest>,
@@ -246,8 +242,12 @@ impl<T: DataVal + 'static, U: DataRow<T> + 'static, V: DataStore<T, U> + 'static
 #[cfg(test)]
 mod tests {
     use super::*;
+
     use chrono::TimeZone;
-    use rust_db_lib::test_utils::TestVal;
+
+    use rust_db_lib::test_utils::{TestDataStore, TestVal};
+
+    use std::vec;
 
     struct TestRow {
         group_name: String,
@@ -314,66 +314,39 @@ mod tests {
         }
     }
 
-    struct TestDataStore {
-        row1: TestRow,
-        row2: TestRow,
-    }
-    impl TestDataStore {
-        pub fn new() -> Self {
-            Self {
-                row1: TestRow {
-                    group_name: "Group1".to_string(),
-                    description: "Description 1".to_string(),
-                    updated_at: chrono::Utc
-                        .with_ymd_and_hms(2024, 1, 1, 0, 0, 0)
-                        .single()
-                        .expect("Date could not be calculated"),
-                    updated_by: "User1".to_string(),
-                    group_is_user_category: false,
-                    member_name: "G:AMANDA1".to_string(),
-                    member_is_group: true,
-                },
-                row2: TestRow {
-                    group_name: "Group2".to_string(),
-                    description: "Description 2".to_string(),
-                    updated_at: chrono::Utc
-                        .with_ymd_and_hms(2024, 1, 2, 0, 0, 0)
-                        .single()
-                        .expect("Date could not be calculated"),
-                    updated_by: "User2".to_string(),
-                    group_is_user_category: true,
-                    member_name: "G:AMANDA2".to_string(),
-                    member_is_group: false,
-                },
-            }
+    fn row1() -> TestRow {
+        TestRow {
+            group_name: "Group1".to_string(),
+            description: "Description 1".to_string(),
+            updated_at: chrono::Utc
+                .with_ymd_and_hms(2024, 1, 1, 0, 0, 0)
+                .single()
+                .expect("Date could not be calculated"),
+            updated_by: "User1".to_string(),
+            group_is_user_category: false,
+            member_name: "G:AMANDA1".to_string(),
+            member_is_group: true,
         }
     }
-    impl Clone for TestDataStore {
-        fn clone(&self) -> Self {
-            Self {
-                row1: self.row1.clone(),
-                row2: self.row2.clone(),
-            }
-        }
-    }
-    #[tonic::async_trait]
-    impl DataStore<TestVal, TestRow> for TestDataStore {
-        async fn execute_query(&self, _: String) -> Result<Vec<TestRow>, DataStoreError> {
-            Ok(vec![self.row1.clone(), self.row2.clone()])
-        }
-        async fn execute_parameterized_query(
-            &self,
-            _: String,
-            _: Vec<String>,
-        ) -> Result<Vec<TestRow>, DataStoreError> {
-            Ok(vec![self.row2.clone()])
+    fn row2() -> TestRow {
+        TestRow {
+            group_name: "Group2".to_string(),
+            description: "Description 2".to_string(),
+            updated_at: chrono::Utc
+                .with_ymd_and_hms(2024, 1, 2, 0, 0, 0)
+                .single()
+                .expect("Date could not be calculated"),
+            updated_by: "User2".to_string(),
+            group_is_user_category: true,
+            member_name: "G:AMANDA2".to_string(),
+            member_is_group: false,
         }
     }
 
     #[tokio::test]
     async fn test_get_group_metadata() {
         let service = AlarmGroupsServiceImpl {
-            data_store: TestDataStore::new(),
+            data_store: TestDataStore::new(vec![row1(), row2()]),
             _row_type: PhantomData,
             _val_type: PhantomData,
         };
@@ -404,7 +377,7 @@ mod tests {
     #[tokio::test]
     async fn test_get_groups() {
         let service = AlarmGroupsServiceImpl {
-            data_store: TestDataStore::new(),
+            data_store: TestDataStore::new(vec![row2()]),
             _row_type: PhantomData,
             _val_type: PhantomData,
         };

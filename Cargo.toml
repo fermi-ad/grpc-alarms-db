@@ -1,12 +1,12 @@
 [package]
 name = "grpc-alarms-db"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2024"
 
 [dependencies]
 # These dependencies are used to support Rust's async environment.
 
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "rt"] }
+tokio = { version = "1.49.0", features = ["rt-multi-thread", "macros", "rt"] }
 tracing-subscriber = { version = "0.3.22", features = ["chrono"] }
 tracing = { version = "0.1.44", features = ["log"] }
 
@@ -25,10 +25,10 @@ prost-types = "0.14.1"
 rust-env-var-lib = { git = "https://github.com/fermi-ad/rust-env-var-lib.git", tag = "v1.1.0" }
 
 # This crate provides access to PostgreSQL.
-rust-db-lib = { git = "https://github.com/fermi-ad/rust-db-lib.git", tag = "v3.1.1" }
+rust-db-lib = { git = "https://github.com/fermi-ad/rust-db-lib.git", tag = "v4.0.0" }
 
 # This crate generates current date and time
-chrono = { version = "0.4", features = ["serde"] }
+chrono = { version = "0.4.42", features = ["alloc", "serde"] }
 
 [build-dependencies]
 

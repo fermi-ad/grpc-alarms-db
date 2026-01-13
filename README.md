@@ -11,21 +11,12 @@ This service provides access to persistent data in the context of accelerator al
 
 ## Supported endpoints
 
-Currently, the following methods are provided via gRPC. Full schema descriptions can be found in the `service/grpc-alarms-db/*` directory of the [`interface-definitions`](https://github.com/fermi-ad/interface-definitions) repository. That repository is a GitHub submodule of this project:
-- `getGroupMetadata() -> AlarmGroupMetadata`
-  - This method takes no parameters and returns all alarm group metadata in the database. 
-  - Metadata consists of the group name, description, time of last update, user who made last update, and whether the group is also a category on the alarm screen.
-- `getGroups(GroupsRequest) -> AlarmGroups`
-  - This method takes a request parameter, containing a list of group names to retrieve.
-  - Returns the requested group objects with their descendant groups and devices.
-- `getUserLayouts() -> UserLayouts`
-  - Method that takes no parameters and returns all user layouts. 
-  - A `UserLayout` is the set of all top-level groups that a specific user has configured for their alarm screen. If a device in the group or a subgroup goes into alarm, it will appear in a category with the top-level group's name. 
+The full schema descriptions of the gRPC methods provided by this service can be found [here](https://github.com/fermi-ad/interface-definitions/tree/main/proto/controls/service/grpc-alarms-db/v1).
 
 ## Environment Variables
 The following variables must be set for this service to run:
 - `DATABASE_HOST` - The host of the database, e.g. `localhost`, `10.32.12.53`, `fermi-db.fnal.gov`, etc.
-- `DATABASE_PORT` - The port to use on the host. Must parse to an unsigned 16-bit integer.
+- `DATABASE_PORT` - The port to use on the host. Must parse to an unsigned 16-bit integer. If none is provided, the default port for PostgreSQL will be used (5432).
 - `DATABASE_USER` - The username to use when connecting to the database.
 - `DATABASE_PASS` - The password for the desired user.
 - `DATABASE_NAME` - The name of the database being connected to, e.g. `adbs`

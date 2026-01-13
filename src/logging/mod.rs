@@ -1,11 +1,11 @@
 use chrono::Local;
+
 use tracing::Level;
-use tracing_subscriber::fmt::{format, time::FormatTime};
+use tracing_subscriber::fmt::{format::Writer, time::FormatTime};
 
 struct LocalTimer;
-
 impl FormatTime for LocalTimer {
-    fn format_time(&self, w: &mut format::Writer<'_>) -> std::fmt::Result {
+    fn format_time(&self, w: &mut Writer<'_>) -> std::fmt::Result {
         write!(w, "{}", Local::now().format("%Y-%m-%d %H:%M:%S"))
     }
 }

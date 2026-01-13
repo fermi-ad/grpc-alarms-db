@@ -15,6 +15,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .compile_protos(
             &[
                 format!("{}/alarm-groups.proto", alarm_proto_dir),
+                format!("{}/alarm-timers.proto", alarm_proto_dir),
                 format!("{}/user-layouts.proto", alarm_proto_dir),
             ],
             from_ref(&alarm_proto_dir),
