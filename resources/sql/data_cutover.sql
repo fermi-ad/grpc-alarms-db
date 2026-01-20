@@ -37,12 +37,12 @@ FROM accdb.alarm_block b
 
 -- Prepare to map the basic alarm lists into the user layout groups --
 CREATE TABLE alarmsapp.tempcutover (
-    username CITEXT,
-	list_index INTEGER,
+    username TEXT,
+	list_index INT,
 	layout_group_mapping CHAR(1),
-	list_name VARCHAR(250),
-	user_list_index INTEGER,
-	user_list_name VARCHAR(250)
+	list_name TEXT,
+	user_list_index INT,
+	user_list_name TEXT
 );
 
 -- Break apart the mapdat field from alarmdspmap --
