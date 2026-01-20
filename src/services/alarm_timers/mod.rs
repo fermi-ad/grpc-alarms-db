@@ -85,7 +85,7 @@ fn validate_delete_request(request: DeleteRequest) -> Result<ValidDeleteRequest,
         Status::invalid_argument("Invalid \"timer_type\" value.")
     })?;
     Ok(ValidDeleteRequest {
-        device: request.device,
+        device: request.device.to_lowercase(),
         timer_type: timer_type.as_str_name().to_string(),
     })
 }
@@ -108,7 +108,7 @@ fn validate_read_request(request: ReadRequest) -> Result<ValidReadRequest, Statu
                     "\"user\" field is required for reminder queries.",
                 ));
             }
-            request.user
+            request.user.to_lowercase()
         }
         _ => String::default(),
     };
@@ -131,13 +131,13 @@ fn validate_timer_input(timer: AlarmTimer) -> Result<ValidTimerInput, Status> {
         return Err(Status::invalid_argument("\"end_time\" field is required."));
     }
     Ok(ValidTimerInput {
-        device: timer.device,
+        device: timer.device.to_lowercase(),
         end_time: timestamp_to_datetime(&timer.end_time.unwrap())?,
         timer_type: TimerType::try_from(timer.timer_type).map_err(|err| {
             error!("Could not parse timer type: {err:?}");
             Status::invalid_argument("Invalid \"timer_type\" value.")
         })?,
-        updated_by: timer.updated_by,
+        updated_by: timer.updated_by.to_lowercase(),
     })
 }
 
@@ -165,7 +165,9 @@ impl<T: DataVal, U: DataRow<T>, V: DataStore<T, U>> AlarmTimersServiceImpl<T, U,
         );
         let query = "
             INSERT INTO alarmsapp.timers (device, end_time, timer_type, updated_by)
-            VALUES ($1, $2, $3, $4)
+            VALUES ($1, $2, 
+                (SELECT type_id FROM alarmsapp.timer_types WHERE type_name = $3), 
+                $4)
             ;
             "
         .to_string();
@@ -189,8 +191,9 @@ impl<T: DataVal, U: DataRow<T>, V: DataStore<T, U>> AlarmTimersServiceImpl<T, U,
         );
 
         let query = "
-            DELETE FROM alarmsapp.timers
-            WHERE device = $1 AND timer_type = $2
+            DELETE t FROM alarmsapp.timers t
+            INNER JOIN alarmsapp.timer_types tt ON t.timer_type = tt.type_id
+            WHERE t.device = $1 AND tt.type_name = $2
             ;
             "
         .to_string();
@@ -216,13 +219,14 @@ impl<T: DataVal, U: DataRow<T>, V: DataStore<T, U>> AlarmTimersServiceImpl<T, U,
             SELECT
                 device,
                 end_time,
-                timer_type,
+                type_name as timer_type,
                 updated_at,
                 updated_by
             FROM 
                 alarmsapp.timers
+            INNER JOIN alarmsapp.timer_types ON timer_type = type_id
             WHERE
-                timer_type = $1
+                type_name = $1
                 AND updated_by = $2
             ORDER BY
                 device
@@ -247,13 +251,14 @@ impl<T: DataVal, U: DataRow<T>, V: DataStore<T, U>> AlarmTimersServiceImpl<T, U,
             SELECT
                 device,
                 end_time,
-                timer_type,
+                type_name as timer_type,
                 updated_at,
                 updated_by
             FROM 
                 alarmsapp.timers
+            INNER JOIN alarmsapp.timer_types ON timer_type = type_id
             WHERE
-                timer_type = 'TimerType_SNOOZE'
+                type_name = 'TimerType_SNOOZE'
             ORDER BY
                 device
             ;
@@ -271,7 +276,8 @@ impl<T: DataVal, U: DataRow<T>, V: DataStore<T, U>> AlarmTimersServiceImpl<T, U,
         let query = "
             UPDATE alarmsapp.timers
             SET end_time = $1, updated_by = $2
-            WHERE device = $3 AND timer_type = $4
+            INNER JOIN alarmsapp.timer_types ON timer_type = type_id
+            WHERE device = $3 AND type_name = $4
             ;
             "
         .to_string();
