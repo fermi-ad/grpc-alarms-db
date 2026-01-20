@@ -85,7 +85,7 @@ fn validate_delete_request(request: DeleteRequest) -> Result<ValidDeleteRequest,
         Status::invalid_argument("Invalid \"timer_type\" value.")
     })?;
     Ok(ValidDeleteRequest {
-        device: request.device,
+        device: request.device.to_lowercase(),
         timer_type: timer_type.as_str_name().to_string(),
     })
 }
@@ -108,7 +108,7 @@ fn validate_read_request(request: ReadRequest) -> Result<ValidReadRequest, Statu
                     "\"user\" field is required for reminder queries.",
                 ));
             }
-            request.user
+            request.user.to_lowercase()
         }
         _ => String::default(),
     };
@@ -131,13 +131,13 @@ fn validate_timer_input(timer: AlarmTimer) -> Result<ValidTimerInput, Status> {
         return Err(Status::invalid_argument("\"end_time\" field is required."));
     }
     Ok(ValidTimerInput {
-        device: timer.device,
+        device: timer.device.to_lowercase(),
         end_time: timestamp_to_datetime(&timer.end_time.unwrap())?,
         timer_type: TimerType::try_from(timer.timer_type).map_err(|err| {
             error!("Could not parse timer type: {err:?}");
             Status::invalid_argument("Invalid \"timer_type\" value.")
         })?,
-        updated_by: timer.updated_by,
+        updated_by: timer.updated_by.to_lowercase(),
     })
 }
 
