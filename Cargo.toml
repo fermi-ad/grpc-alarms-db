@@ -25,7 +25,7 @@ prost-types = "0.14.1"
 rust-env-var-lib = { git = "https://github.com/fermi-ad/rust-env-var-lib.git", tag = "v1.1.0" }
 
 # This crate provides access to PostgreSQL.
-rust-db-lib = { git = "https://github.com/fermi-ad/rust-db-lib.git", tag = "v4.0.1" }
+rust-db-lib = { git = "https://github.com/fermi-ad/rust-db-lib.git", tag = "v4.1.0" }
 
 # This crate generates current date and time
 chrono = { version = "0.4.42", features = ["alloc", "serde"] }
