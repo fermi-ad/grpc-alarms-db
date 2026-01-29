@@ -7,7 +7,7 @@ on:
 
 jobs:
   deploy:
-    uses: fermi-ad/.github/.github/workflows/rust-deployment.yaml@b99946ba8722aeb25ac95245fa01862054748f92
+    uses: fermi-ad/.github/.github/workflows/rust-deployment.yaml@e0c90cb1aa154991276dbdd6a4eccfd676b5208b
     secrets: inherit
     permissions:
       contents: read
