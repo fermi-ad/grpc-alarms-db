@@ -1,6 +1,6 @@
 [package]
 name = "grpc-alarms-db"
-version = "0.3.0"
+version = "0.3.1"
 edition = "2024"
 
 [dependencies]
@@ -12,28 +12,28 @@ tracing = { version = "0.1.44", features = ["log"] }
 
 # These crates are used to implement the gRPC web service.
 
-tonic = "0.14.2"
-tonic-health = "0.14.2"
-tonic-prost = "0.14.2"
-tonic-reflection = "0.14.2"
+tonic = "0.14.3"
+tonic-health = "0.14.3"
+tonic-prost = "0.14.3"
+tonic-reflection = "0.14.3"
 
 # These crates provide runtime support for protobufs.
-prost = "0.14.1"
-prost-types = "0.14.1"
+prost = "0.14.3"
+prost-types = "0.14.3"
 
 # This crate provides ergonomic environment variable interaction
 rust-env-var-lib = { git = "https://github.com/fermi-ad/rust-env-var-lib.git", tag = "v1.1.0" }
 
 # This crate provides access to PostgreSQL.
-rust-db-lib = { git = "https://github.com/fermi-ad/rust-db-lib.git", tag = "v4.1.0" }
+rust-db-lib = { git = "https://github.com/fermi-ad/rust-db-lib.git", tag = "v4.1.1" }
 
 # This crate generates current date and time
-chrono = { version = "0.4.42", features = ["alloc", "serde"] }
+chrono = { version = "0.4.43", features = ["alloc", "serde"] }
 
 [build-dependencies]
 
 # This crate translates protobuf source files into a Rust module.
-tonic-prost-build = "0.14.2"
+tonic-prost-build = "0.14.3"
 protoc-bin-vendored = "3.2"
 
 [profile.release]
