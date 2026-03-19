@@ -245,7 +245,7 @@ mod tests {
 
     use chrono::TimeZone;
 
-    use rust_db_lib::test_utils::{TestDataStore, TestVal};
+    use rust_db_lib::testing_utils::{TestDataStore, TestVal};
 
     use std::vec;
 

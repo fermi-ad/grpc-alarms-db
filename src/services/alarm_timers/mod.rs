@@ -371,7 +371,7 @@ mod tests {
 
     use chrono::{DateTime, Utc};
 
-    use rust_db_lib::test_utils::{TestDataStore, TestVal};
+    use rust_db_lib::testing_utils::{TestDataStore, TestVal};
 
     struct TestRow {
         device: String,

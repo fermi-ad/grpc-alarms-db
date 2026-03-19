@@ -87,7 +87,7 @@ impl<T: DataVal + 'static, U: DataRow<T> + 'static, V: DataStore<T, U> + 'static
 mod tests {
     use super::*;
 
-    use rust_db_lib::test_utils::{TestDataStore, TestVal};
+    use rust_db_lib::testing_utils::{TestDataStore, TestVal};
 
     #[derive(Clone, Debug)]
     struct TestRow {

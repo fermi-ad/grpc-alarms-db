@@ -1,36 +1,32 @@
-use chrono::Local;
+//! Logging Module
+//!
+//! Configures logging for the application.
 
-use tracing::Level;
-use tracing_subscriber::fmt::{format::Writer, time::FormatTime};
-
-struct LocalTimer;
-impl FormatTime for LocalTimer {
-    fn format_time(&self, w: &mut Writer<'_>) -> std::fmt::Result {
-        write!(w, "{}", Local::now().format("%Y-%m-%d %H:%M:%S"))
-    }
-}
+use tracing_subscriber::{Registry, filter::EnvFilter, fmt::layer, layer::SubscriberExt};
 
 /// Configures the runtime environment for logging using tracing
 pub fn setup_logging() {
-    let subscriber = tracing_subscriber::fmt()
-        .with_timer(LocalTimer)
-        .with_max_level(Level::INFO)
+    let fmt_layer = layer()
         .with_target(false)
-        .finish();
-
-    tracing::subscriber::set_global_default(subscriber)
-        .expect("Unable to set global default subscriber");
+        .with_file(true)
+        .with_line_number(true);
+    // The following reads the log levels specified in the RUST_LOG environment variable. Allows us to configure logging
+    // at both the application level and for specific crates/modules.
+    let level_layer = EnvFilter::from_default_env();
+    let subscriber = Registry::default().with(fmt_layer).with(level_layer);
+    tracing::subscriber::set_global_default(subscriber).expect("Failed to set up logger");
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tracing::info;
 
     #[test]
-    #[should_panic(expected = "Unable to set global default subscriber")]
+    #[should_panic(expected = "Failed to set up logger")]
     fn test_logging_setup() {
         setup_logging();
-        tracing::info!("Logging is set up correctly.");
+        info!("Logging is set up correctly.");
         setup_logging(); // This should panic
     }
 }

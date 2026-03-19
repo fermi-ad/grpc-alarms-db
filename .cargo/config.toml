@@ -1,0 +1,5 @@
+[env]
+ALARM_GRPC_SERVER_PORT = "7055"
+
+[net]
+git-fetch-with-cli = true
