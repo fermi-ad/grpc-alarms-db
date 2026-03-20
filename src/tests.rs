@@ -20,3 +20,8 @@ async fn test_start_server() {
     let result = timeout(Duration::from_secs(1), future).await;
     assert!(result.is_err());
 }
+
+#[test]
+fn test_row_get() {
+    assert_eq!(TestVal::new(), TestRow.get(""));
+}

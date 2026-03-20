@@ -16,5 +16,6 @@ jobs:
       contents: write
       pull-requests: write
     with:
+      coverage-exclude: "|queries.rs" # These files just contain static constants, which are inlined at compile time. Because of this, the coverage reporter shows the source files as lacking coverage.
       pull-git-submodules: true
       references-internal-git-repo: true
