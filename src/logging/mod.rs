@@ -4,6 +4,9 @@
 
 use tracing_subscriber::{Registry, filter::EnvFilter, fmt::layer, layer::SubscriberExt};
 
+#[cfg(test)]
+mod tests;
+
 /// Configures the runtime environment for logging using tracing
 pub fn setup_logging() {
     let fmt_layer = layer()
@@ -15,18 +18,4 @@ pub fn setup_logging() {
     let level_layer = EnvFilter::from_default_env();
     let subscriber = Registry::default().with(fmt_layer).with(level_layer);
     tracing::subscriber::set_global_default(subscriber).expect("Failed to set up logger");
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use tracing::info;
-
-    #[test]
-    #[should_panic(expected = "Failed to set up logger")]
-    fn test_logging_setup() {
-        setup_logging();
-        info!("Logging is set up correctly.");
-        setup_logging(); // This should panic
-    }
 }

@@ -19,6 +19,17 @@ mod logging;
 mod services;
 mod utils;
 
+#[cfg(test)]
+mod tests;
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    logging::setup_logging();
+
+    let data_store = PostgresDataStore::new().await;
+    start_server(data_store).await
+}
+
 fn generate_server_address() -> SocketAddr {
     let port = env_var::expect("ALARM_GRPC_SERVER_PORT");
     let addr = SocketAddr::new(IpAddr::V6(Ipv6Addr::UNSPECIFIED), port);
@@ -66,36 +77,4 @@ async fn start_server<
         .set_not_serving::<UserLayoutsServiceServer<V>>()
         .await;
     Ok(result?)
-}
-
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    logging::setup_logging();
-
-    let data_store = PostgresDataStore::new().await;
-    start_server(data_store).await
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use rust_db_lib::testing_utils::{TestDataStore, TestVal};
-    use std::time::Duration;
-    use tokio::time::timeout;
-
-    #[derive(Clone, Debug)]
-    struct TestRow;
-    impl DataRow<TestVal> for TestRow {
-        fn get(&self, _: &str) -> TestVal {
-            TestVal::new()
-        }
-    }
-
-    #[tokio::test]
-    async fn test_start_server() {
-        let data_store = TestDataStore::new(Vec::<TestRow>::new());
-        let future = start_server(data_store);
-        let result = timeout(Duration::from_secs(1), future).await;
-        assert!(result.is_err());
-    }
 }

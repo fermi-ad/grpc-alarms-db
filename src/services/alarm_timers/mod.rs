@@ -1,24 +1,206 @@
-use chrono::{DateTime, Utc};
+//! Alarm Timers Module
+//!
+//! Interacts with the database to store and retrieve data related to alarm timers (snooze and bypass reminders).
 
-mod proto {
-    tonic::include_proto!("services.alarm_timers");
-}
 pub use proto::alarm_timer_service_server::AlarmTimerServiceServer;
+
+use crate::{
+    services::alarm_timers::queries::{
+        CREATE_TIMER_QUERY, DELETE_TIMER_QUERY, READ_SNOOZE_TIMERS,
+        READ_USER_BYPASS_REMINDERS_QUERY, UPDATE_TIMER_QUERY,
+    },
+    utils,
+};
+use chrono::{DateTime, Utc};
 use proto::{
     AlarmTimer, AlarmTimers, DeleteRequest, ReadRequest, TimerType,
     alarm_timer_service_server::AlarmTimerService,
 };
-
 use rust_db_lib::{
     DataRow, DataStore, DataStoreError, DataVal, ParameterizedQuery, QueryParameter,
 };
-
 use std::marker::PhantomData;
-
 use tonic::{Request, Response, Status};
 use tracing::{error, info};
 
-use crate::utils;
+mod proto {
+    tonic::include_proto!("services.alarm_timers");
+}
+mod queries;
+
+#[cfg(test)]
+mod tests;
+
+/// A service wrapping a [`DataStore`] to provide alarm timer information, and implementing the Protobuf-defined gRPC service.
+pub struct AlarmTimersServiceImpl<T: DataVal, U: DataRow<T>, V: DataStore<T, U>> {
+    data_store: V,
+    _row_type: PhantomData<U>,
+    _val_type: PhantomData<T>,
+}
+impl<T: DataVal, U: DataRow<T>, V: DataStore<T, U>> AlarmTimersServiceImpl<T, U, V> {
+    pub fn new(data_store: V) -> Self {
+        Self {
+            data_store,
+            _row_type: PhantomData,
+            _val_type: PhantomData,
+        }
+    }
+
+    async fn create_impl(&self, timer: ValidTimerInput) -> Result<(), DataStoreError> {
+        info!(
+            "Setting alarm timer for device: {}, type: {}",
+            timer.device,
+            timer.timer_type.as_str_name()
+        );
+
+        let query = CREATE_TIMER_QUERY.to_string();
+        let mut query_builder = ParameterizedQuery::new(query);
+        query_builder.bind(QueryParameter::STR(timer.device));
+        query_builder.bind(QueryParameter::DATETIME(timer.end_time));
+        query_builder.bind(QueryParameter::STR(
+            timer.timer_type.as_str_name().to_string(),
+        ));
+        query_builder.bind(QueryParameter::STR(timer.updated_by));
+        self.data_store
+            .execute_parameterized_query(query_builder)
+            .await
+            .map(|_| ())
+    }
+
+    async fn delete_impl(&self, timer: ValidDeleteRequest) -> Result<(), DataStoreError> {
+        info!(
+            "Deleting alarm timer for device: {}, type: {}",
+            timer.device, timer.timer_type
+        );
+
+        let query = DELETE_TIMER_QUERY.to_string();
+        let mut query_builder = ParameterizedQuery::new(query);
+        query_builder.bind(QueryParameter::STR(timer.device));
+        query_builder.bind(QueryParameter::STR(timer.timer_type));
+        self.data_store
+            .execute_parameterized_query(query_builder)
+            .await
+            .map(|_| ())
+    }
+
+    async fn read_bypass_reminders(
+        &self,
+        request: ValidReadRequest,
+    ) -> Result<Vec<AlarmTimer>, DataStoreError> {
+        info!(
+            "Fetching bypass reminder timers for user: {} from the data store.",
+            request.user
+        );
+
+        let query = READ_USER_BYPASS_REMINDERS_QUERY.to_string();
+        let mut query_builder = ParameterizedQuery::new(query);
+        query_builder.bind(QueryParameter::STR(
+            TimerType::BypassReminder.as_str_name().to_string(),
+        ));
+        query_builder.bind(QueryParameter::STR(request.user));
+        let rows = self
+            .data_store
+            .execute_parameterized_query(query_builder)
+            .await?;
+        rows_to_timers(rows)
+    }
+
+    async fn read_snooze_timers(&self) -> Result<Vec<AlarmTimer>, DataStoreError> {
+        info!("Fetching all snooze timers from the data store.");
+        let rows = self.data_store.execute_query(READ_SNOOZE_TIMERS).await?;
+        rows_to_timers(rows)
+    }
+
+    async fn update_impl(&self, timer: ValidTimerInput) -> Result<(), DataStoreError> {
+        info!(
+            "Updating alarm timer for device: {}, type: {}",
+            timer.device,
+            timer.timer_type.as_str_name()
+        );
+        let query = UPDATE_TIMER_QUERY.to_string();
+        let mut query_builder = ParameterizedQuery::new(query);
+        query_builder.bind(QueryParameter::DATETIME(timer.end_time));
+        query_builder.bind(QueryParameter::STR(timer.updated_by));
+        query_builder.bind(QueryParameter::STR(timer.device));
+        query_builder.bind(QueryParameter::STR(
+            timer.timer_type.as_str_name().to_string(),
+        ));
+        self.data_store
+            .execute_parameterized_query(query_builder)
+            .await
+            .map(|_| ())
+    }
+}
+
+#[tonic::async_trait]
+impl<T: DataVal + 'static, U: DataRow<T> + 'static, V: DataStore<T, U> + 'static> AlarmTimerService
+    for AlarmTimersServiceImpl<T, U, V>
+{
+    async fn create(&self, request: Request<AlarmTimer>) -> Result<Response<()>, Status> {
+        let timer_input = request.into_inner();
+        let timer = validate_timer_input(timer_input)?;
+
+        match self.create_impl(timer).await {
+            Ok(_) => Ok(Response::new(())),
+            Err(e) => {
+                error!("Error setting alarm timer: {e:?}");
+                Err(Status::internal(
+                    "Failed to set alarm timer. See server logs for details.",
+                ))
+            }
+        }
+    }
+
+    async fn delete(&self, request: Request<DeleteRequest>) -> Result<Response<()>, Status> {
+        let delete_input = request.into_inner();
+        let validated_request = validate_delete_request(delete_input)?;
+        match self.delete_impl(validated_request).await {
+            Ok(_) => Ok(Response::new(())),
+            Err(e) => {
+                error!("Error deleting alarm timer: {e:?}");
+                Err(Status::internal(
+                    "Failed to delete alarm timer. See server logs for details.",
+                ))
+            }
+        }
+    }
+
+    async fn read(&self, request: Request<ReadRequest>) -> Result<Response<AlarmTimers>, Status> {
+        let read_input = request.into_inner();
+        let validated_request = validate_read_request(read_input)?;
+
+        let result = match validated_request.timer_type {
+            TimerType::Snooze => self.read_snooze_timers().await,
+            TimerType::BypassReminder => self.read_bypass_reminders(validated_request).await,
+            TimerType::Unknown => unreachable!(),
+        };
+
+        match result {
+            Ok(alarm_timers) => Ok(Response::new(AlarmTimers { alarm_timers })),
+            Err(e) => {
+                error!("{e:?}");
+                Err(Status::internal(
+                    "Failed to fetch alarm timers. See server logs for details.",
+                ))
+            }
+        }
+    }
+
+    async fn update(&self, request: Request<AlarmTimer>) -> Result<Response<()>, Status> {
+        let timer_input = request.into_inner();
+        let timer = validate_timer_input(timer_input)?;
+
+        match self.update_impl(timer).await {
+            Ok(_) => Ok(Response::new(())),
+            Err(e) => {
+                error!("Error updating alarm timer: {e:?}");
+                Err(Status::internal(
+                    "Failed to update alarm timer. See server logs for details.",
+                ))
+            }
+        }
+    }
+}
 
 struct ValidDeleteRequest {
     device: String,
@@ -139,501 +321,4 @@ fn validate_timer_input(timer: AlarmTimer) -> Result<ValidTimerInput, Status> {
         })?,
         updated_by: timer.updated_by.to_lowercase(),
     })
-}
-
-/// A service wrapping a [`DataStore`] to provide alarm timer information, and implementing the Protobuf-defined gRPC service.
-pub struct AlarmTimersServiceImpl<T: DataVal, U: DataRow<T>, V: DataStore<T, U>> {
-    data_store: V,
-    _row_type: PhantomData<U>,
-    _val_type: PhantomData<T>,
-}
-
-impl<T: DataVal, U: DataRow<T>, V: DataStore<T, U>> AlarmTimersServiceImpl<T, U, V> {
-    pub fn new(data_store: V) -> Self {
-        Self {
-            data_store,
-            _row_type: PhantomData,
-            _val_type: PhantomData,
-        }
-    }
-
-    async fn create_impl(&self, timer: ValidTimerInput) -> Result<(), DataStoreError> {
-        info!(
-            "Setting alarm timer for device: {}, type: {}",
-            timer.device,
-            timer.timer_type.as_str_name()
-        );
-        let query = "
-            INSERT INTO alarmsapp.timers (device, end_time, timer_type, updated_by)
-            VALUES ($1, $2, 
-                (SELECT type_id FROM alarmsapp.timer_types WHERE type_name = $3), 
-                $4)
-            ;
-            "
-        .to_string();
-        let mut query_builder = ParameterizedQuery::new(query);
-        query_builder.bind(QueryParameter::STR(timer.device));
-        query_builder.bind(QueryParameter::DATETIME(timer.end_time));
-        query_builder.bind(QueryParameter::STR(
-            timer.timer_type.as_str_name().to_string(),
-        ));
-        query_builder.bind(QueryParameter::STR(timer.updated_by));
-        self.data_store
-            .execute_parameterized_query(query_builder)
-            .await
-            .map(|_| ())
-    }
-
-    async fn delete_impl(&self, timer: ValidDeleteRequest) -> Result<(), DataStoreError> {
-        info!(
-            "Deleting alarm timer for device: {}, type: {}",
-            timer.device, timer.timer_type
-        );
-
-        let query = "
-            DELETE t FROM alarmsapp.timers t
-            INNER JOIN alarmsapp.timer_types tt ON t.timer_type = tt.type_id
-            WHERE t.device = $1 AND tt.type_name = $2
-            ;
-            "
-        .to_string();
-        let mut query_builder = ParameterizedQuery::new(query);
-        query_builder.bind(QueryParameter::STR(timer.device));
-        query_builder.bind(QueryParameter::STR(timer.timer_type));
-        self.data_store
-            .execute_parameterized_query(query_builder)
-            .await
-            .map(|_| ())
-    }
-
-    async fn read_bypass_reminders(
-        &self,
-        request: ValidReadRequest,
-    ) -> Result<Vec<AlarmTimer>, DataStoreError> {
-        info!(
-            "Fetching bypass reminder timers for user: {} from the data store.",
-            request.user
-        );
-
-        let query = "
-            SELECT
-                device,
-                end_time,
-                type_name as timer_type,
-                updated_at,
-                updated_by
-            FROM 
-                alarmsapp.timers
-            INNER JOIN alarmsapp.timer_types ON timer_type = type_id
-            WHERE
-                type_name = $1
-                AND updated_by = $2
-            ORDER BY
-                device
-            ;
-            ";
-        let mut query_builder = ParameterizedQuery::new(query.to_string());
-        query_builder.bind(QueryParameter::STR(
-            TimerType::BypassReminder.as_str_name().to_string(),
-        ));
-        query_builder.bind(QueryParameter::STR(request.user));
-        let rows = self
-            .data_store
-            .execute_parameterized_query(query_builder)
-            .await?;
-        rows_to_timers(rows)
-    }
-
-    async fn read_snooze_timers(&self) -> Result<Vec<AlarmTimer>, DataStoreError> {
-        info!("Fetching all snooze timers from the data store.");
-
-        let query = "
-            SELECT
-                device,
-                end_time,
-                type_name as timer_type,
-                updated_at,
-                updated_by
-            FROM 
-                alarmsapp.timers
-            INNER JOIN alarmsapp.timer_types ON timer_type = type_id
-            WHERE
-                type_name = 'TimerType_SNOOZE'
-            ORDER BY
-                device
-            ;
-            ";
-        let rows = self.data_store.execute_query(query).await?;
-        rows_to_timers(rows)
-    }
-
-    async fn update_impl(&self, timer: ValidTimerInput) -> Result<(), DataStoreError> {
-        info!(
-            "Updating alarm timer for device: {}, type: {}",
-            timer.device,
-            timer.timer_type.as_str_name()
-        );
-        let query = "
-            UPDATE alarmsapp.timers
-            SET end_time = $1, updated_by = $2
-            INNER JOIN alarmsapp.timer_types ON timer_type = type_id
-            WHERE device = $3 AND type_name = $4
-            ;
-            "
-        .to_string();
-        let mut query_builder = ParameterizedQuery::new(query);
-        query_builder.bind(QueryParameter::DATETIME(timer.end_time));
-        query_builder.bind(QueryParameter::STR(timer.updated_by));
-        query_builder.bind(QueryParameter::STR(timer.device));
-        query_builder.bind(QueryParameter::STR(
-            timer.timer_type.as_str_name().to_string(),
-        ));
-        self.data_store
-            .execute_parameterized_query(query_builder)
-            .await
-            .map(|_| ())
-    }
-}
-
-#[tonic::async_trait]
-impl<T: DataVal + 'static, U: DataRow<T> + 'static, V: DataStore<T, U> + 'static> AlarmTimerService
-    for AlarmTimersServiceImpl<T, U, V>
-{
-    async fn create(&self, request: Request<AlarmTimer>) -> Result<Response<()>, Status> {
-        let timer_input = request.into_inner();
-        let timer = validate_timer_input(timer_input)?;
-
-        match self.create_impl(timer).await {
-            Ok(_) => Ok(Response::new(())),
-            Err(e) => {
-                error!("Error setting alarm timer: {e:?}");
-                Err(Status::internal(
-                    "Failed to set alarm timer. See server logs for details.",
-                ))
-            }
-        }
-    }
-
-    async fn delete(&self, request: Request<DeleteRequest>) -> Result<Response<()>, Status> {
-        let delete_input = request.into_inner();
-        let validated_request = validate_delete_request(delete_input)?;
-        match self.delete_impl(validated_request).await {
-            Ok(_) => Ok(Response::new(())),
-            Err(e) => {
-                error!("Error deleting alarm timer: {e:?}");
-                Err(Status::internal(
-                    "Failed to delete alarm timer. See server logs for details.",
-                ))
-            }
-        }
-    }
-
-    async fn read(&self, request: Request<ReadRequest>) -> Result<Response<AlarmTimers>, Status> {
-        let read_input = request.into_inner();
-        let validated_request = validate_read_request(read_input)?;
-
-        let result = if let TimerType::Snooze = validated_request.timer_type {
-            self.read_snooze_timers().await
-        } else {
-            self.read_bypass_reminders(validated_request).await
-        };
-
-        match result {
-            Ok(alarm_timers) => Ok(Response::new(AlarmTimers { alarm_timers })),
-            Err(e) => {
-                error!("{e:?}");
-                Err(Status::internal(
-                    "Failed to fetch alarm timers. See server logs for details.",
-                ))
-            }
-        }
-    }
-
-    async fn update(&self, request: Request<AlarmTimer>) -> Result<Response<()>, Status> {
-        let timer_input = request.into_inner();
-        let timer = validate_timer_input(timer_input)?;
-
-        match self.update_impl(timer).await {
-            Ok(_) => Ok(Response::new(())),
-            Err(e) => {
-                error!("Error updating alarm timer: {e:?}");
-                Err(Status::internal(
-                    "Failed to update alarm timer. See server logs for details.",
-                ))
-            }
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    use chrono::{DateTime, Utc};
-
-    use rust_db_lib::testing_utils::{TestDataStore, TestVal};
-
-    struct TestRow {
-        device: String,
-        end_time: DateTime<Utc>,
-        timer_type: String,
-        updated_at: DateTime<Utc>,
-        updated_by: String,
-    }
-    impl DataRow<TestVal> for TestRow {
-        fn get(&self, col: &str) -> TestVal {
-            let mut val = TestVal::new();
-            match col {
-                "device" => val.test_string = Some(self.device.clone()),
-                "end_time" => val.test_datetime = Some(self.end_time.clone()),
-                "timer_type" => val.test_string = Some(self.timer_type.clone()),
-                "updated_at" => val.test_datetime = Some(self.updated_at.clone()),
-                "updated_by" => val.test_string = Some(self.updated_by.clone()),
-                _ => (),
-            };
-            val
-        }
-    }
-    impl Clone for TestRow {
-        fn clone(&self) -> Self {
-            TestRow {
-                device: self.device.clone(),
-                end_time: self.end_time.clone(),
-                timer_type: self.timer_type.clone(),
-                updated_at: self.updated_at.clone(),
-                updated_by: self.updated_by.clone(),
-            }
-        }
-    }
-
-    #[tokio::test]
-    async fn test_read_bypass_reminders() {
-        let test_time = Utc::now();
-        let test_row = TestRow {
-            device: "Device1".to_string(),
-            end_time: test_time.clone(),
-            timer_type: TimerType::BypassReminder.as_str_name().to_string(),
-            updated_at: test_time.clone(),
-            updated_by: "UserA".to_string(),
-        };
-        let data_store = TestDataStore {
-            data: vec![test_row.clone()],
-        };
-        let service = AlarmTimersServiceImpl::new(data_store);
-        let result = service
-            .read_bypass_reminders(ValidReadRequest {
-                timer_type: TimerType::BypassReminder,
-                user: "UserA".to_string(),
-            })
-            .await;
-        assert!(result.is_ok());
-
-        let timers = result.unwrap();
-        assert_eq!(timers.len(), 1);
-        let timer = &timers[0];
-        assert_eq!(timer.device, test_row.device);
-        assert_eq!(
-            timer.end_time,
-            utils::datetime_to_timestamp(test_row.end_time)
-        );
-        assert_eq!(timer.timer_type, TimerType::BypassReminder as i32);
-        assert_eq!(
-            timer.updated_at,
-            utils::datetime_to_timestamp(test_row.updated_at)
-        );
-        assert_eq!(timer.updated_by, test_row.updated_by);
-    }
-
-    #[tokio::test]
-    async fn test_read_snooze_timers() {
-        let test_time = Utc::now();
-        let test_row = TestRow {
-            device: "Device1".to_string(),
-            end_time: test_time.clone(),
-            timer_type: TimerType::Snooze.as_str_name().to_string(),
-            updated_at: test_time.clone(),
-            updated_by: "UserA".to_string(),
-        };
-        let data_store = TestDataStore {
-            data: vec![test_row.clone()],
-        };
-
-        let service = AlarmTimersServiceImpl::new(data_store);
-        let result = service
-            .read(Request::new(ReadRequest {
-                timer_type: TimerType::Snooze as i32,
-                user: String::default(),
-            }))
-            .await;
-
-        assert!(result.is_ok());
-
-        let timers = result.unwrap().into_inner().alarm_timers;
-        assert_eq!(timers.len(), 1);
-
-        let timer = &timers[0];
-        assert_eq!(timer.device, test_row.device);
-        assert_eq!(
-            timer.end_time,
-            utils::datetime_to_timestamp(test_row.end_time)
-        );
-        assert_eq!(timer.timer_type, TimerType::Snooze as i32);
-        assert_eq!(
-            timer.updated_at,
-            utils::datetime_to_timestamp(test_row.updated_at)
-        );
-        assert_eq!(timer.updated_by, test_row.updated_by);
-    }
-
-    #[tokio::test]
-    async fn test_create_timer() {
-        let data_store = TestDataStore::<TestRow> { data: vec![] };
-        let service = AlarmTimersServiceImpl::new(data_store);
-
-        let test_time = utils::datetime_to_timestamp(Utc::now());
-        let alarm_timer = AlarmTimer {
-            device: "Device2".to_string(),
-            end_time: test_time,
-            timer_type: TimerType::BypassReminder as i32,
-            updated_at: None,
-            updated_by: "UserB".to_string(),
-        };
-
-        let result = service.create(Request::new(alarm_timer)).await;
-
-        assert!(result.is_ok());
-    }
-
-    #[tokio::test]
-    async fn test_delete_timer() {
-        let data_store = TestDataStore::<TestRow> { data: vec![] };
-        let service = AlarmTimersServiceImpl::new(data_store);
-
-        let delete_request = DeleteRequest {
-            device: "Device3".to_string(),
-            timer_type: TimerType::Snooze as i32,
-        };
-
-        let result = service.delete(Request::new(delete_request)).await;
-
-        assert!(result.is_ok());
-    }
-
-    #[tokio::test]
-    async fn test_update_timer() {
-        let data_store = TestDataStore::<TestRow> { data: vec![] };
-        let service = AlarmTimersServiceImpl::new(data_store);
-        let test_time = utils::datetime_to_timestamp(Utc::now());
-        let alarm_timer = AlarmTimer {
-            device: "Device4".to_string(),
-            end_time: test_time,
-            timer_type: TimerType::BypassReminder as i32,
-            updated_at: None,
-            updated_by: "UserC".to_string(),
-        };
-        let result = service.update(Request::new(alarm_timer)).await;
-        assert!(result.is_ok());
-    }
-
-    #[test]
-    fn test_validate_delete_request() {
-        let invalid_request = DeleteRequest {
-            device: "".to_string(),
-            timer_type: TimerType::BypassReminder as i32,
-        };
-        let result = validate_delete_request(invalid_request);
-        assert!(result.is_err());
-
-        let invalid_request = DeleteRequest {
-            device: "Device1".to_string(),
-            timer_type: TimerType::Unknown as i32,
-        };
-        let result = validate_delete_request(invalid_request);
-        assert!(result.is_err());
-
-        let invalid_request = DeleteRequest {
-            device: "Device1".to_string(),
-            timer_type: 12345,
-        };
-        let result = validate_delete_request(invalid_request);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_validate_read_request() {
-        let invalid_request = ReadRequest {
-            timer_type: TimerType::Unknown as i32,
-            user: "UserA".to_string(),
-        };
-        let result = validate_read_request(invalid_request);
-        assert!(result.is_err());
-
-        let invalid_request = ReadRequest {
-            timer_type: TimerType::BypassReminder as i32,
-            user: "".to_string(),
-        };
-        let result = validate_read_request(invalid_request);
-        assert!(result.is_err());
-
-        let invalid_request = ReadRequest {
-            timer_type: 67890,
-            user: "UserA".to_string(),
-        };
-        let result = validate_read_request(invalid_request);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_validate_timer_input() {
-        let valid_device = "Device3".to_string();
-        let valid_time = utils::datetime_to_timestamp(Utc::now());
-
-        fn invalid_alarm_timer() -> AlarmTimer {
-            AlarmTimer {
-                device: "".to_string(),
-                end_time: None,
-                timer_type: TimerType::Unknown as i32,
-                updated_at: None,
-                updated_by: "".to_string(),
-            }
-        }
-
-        let result = validate_timer_input(invalid_alarm_timer());
-        assert!(result.is_err());
-
-        let mut invalid_timer = invalid_alarm_timer();
-        invalid_timer.device = valid_device.clone();
-        let result = validate_timer_input(invalid_timer);
-        assert!(result.is_err());
-
-        let mut invalid_timer = invalid_alarm_timer();
-        invalid_timer.device = valid_device.clone();
-        invalid_timer.end_time = valid_time.clone();
-        let result = validate_timer_input(invalid_timer);
-        assert!(result.is_err());
-
-        let mut invalid_timer = invalid_alarm_timer();
-        invalid_timer.device = valid_device.clone();
-        invalid_timer.end_time = valid_time.clone();
-        invalid_timer.timer_type = 897;
-        let result = validate_timer_input(invalid_timer);
-        assert!(result.is_err());
-
-        let mut invalid_timer = invalid_alarm_timer();
-        invalid_timer.device = valid_device.clone();
-        invalid_timer.end_time = valid_time.clone();
-        invalid_timer.timer_type = TimerType::Snooze as i32;
-        let result = validate_timer_input(invalid_timer);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_timestamp_to_datetime_out_of_range() {
-        let invalid_timestamp = prost_types::Timestamp {
-            seconds: i64::MAX,
-            nanos: i32::MAX,
-        };
-        let result = timestamp_to_datetime(&invalid_timestamp);
-        assert!(result.is_err());
-    }
 }
