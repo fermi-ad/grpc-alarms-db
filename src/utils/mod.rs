@@ -1,5 +1,8 @@
-use chrono::{DateTime, Utc};
+//! Utilities Module
+//!
+//! Provides utility functions that have application-wide applicability.
 
+use chrono::{DateTime, Utc};
 use prost_types::Timestamp;
 
 /// Converts a `DateTime<Utc>` to a Protobuf `Timestamp`.

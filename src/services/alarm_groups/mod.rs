@@ -1,28 +1,128 @@
-mod proto {
-    tonic::include_proto!("services.alarm_groups");
-}
+//! Alarm Groups Module
+//!
+//! Contains logic for retrieving and updating alarm groups.
+//!
 pub use proto::alarm_group_service_server::AlarmGroupServiceServer;
+
+use crate::utils;
 use proto::{
     AlarmGroup, AlarmGroupMetadata, AlarmGroupMetadatum, AlarmGroups, GroupsRequest,
     alarm_group_service_server::AlarmGroupService,
 };
-
+use queries::{ALL_GROUPS_METADATA_QUERY, GROUP_DETAILS_QUERY};
 use rust_db_lib::{
     DataRow, DataStore, DataStoreError, DataVal, ParameterizedQuery, QueryParameter,
 };
-
 use std::{cmp::Ordering, collections::HashMap, marker::PhantomData};
-
 use tonic::{Request, Response, Status};
 use tracing::{error, info};
 
-use crate::utils;
+mod proto {
+    tonic::include_proto!("services.alarm_groups");
+}
+mod queries;
+
+#[cfg(test)]
+mod tests;
 
 /// A service wrapping a [`DataStore`] to provide alarm group information, and implementing the Protobuf-defined gRPC service.
 pub struct AlarmGroupsServiceImpl<T: DataVal, U: DataRow<T>, V: DataStore<T, U>> {
     data_store: V,
     _row_type: PhantomData<U>,
     _val_type: PhantomData<T>,
+}
+impl<T: DataVal, U: DataRow<T>, V: DataStore<T, U>> AlarmGroupsServiceImpl<T, U, V> {
+    pub fn new(data_store: V) -> Self {
+        Self {
+            data_store,
+            _row_type: PhantomData,
+            _val_type: PhantomData,
+        }
+    }
+
+    /// Retrieves all alarm group metadata.
+    async fn get_all_metadata(&self) -> Result<Vec<AlarmGroupMetadatum>, DataStoreError> {
+        info!("Query for all alarm group metadata ");
+        let query_result = self
+            .data_store
+            .execute_query(ALL_GROUPS_METADATA_QUERY)
+            .await?;
+        let mut metadata = rows_to_metadata(query_result)?;
+        metadata.sort_by(|a, b| a.name.cmp(&b.name));
+
+        Ok(metadata)
+    }
+
+    async fn get_requested_groups(
+        &self,
+        specified_groups: Vec<String>,
+    ) -> Result<Vec<AlarmGroup>, DataStoreError> {
+        info!(
+            "Query for alarm groups {:?}, and associated devices ",
+            specified_groups
+        );
+
+        let needed_placeholders: Vec<String> = (1..specified_groups.len())
+            .map(|index| format!("${}", index))
+            .collect();
+
+        // Uses a recursive Common Table Expression (CTE) to build the result rows down to the device level.
+        // That is, users can specify the top-level groups they want, and this SQL query will return all the
+        // child, grandchild, etc. objects under it.
+        let alarm_group_query = format!(GROUP_DETAILS_QUERY!(), needed_placeholders.join(", "));
+
+        let mut query_builder = ParameterizedQuery::new(alarm_group_query);
+        for group in specified_groups {
+            query_builder.bind(QueryParameter::STR(group));
+        }
+
+        let query_result = self
+            .data_store
+            .execute_parameterized_query(query_builder)
+            .await?;
+        let mut groups = rows_to_groups(query_result)?;
+        groups.sort_by(sort_groups);
+
+        Ok(groups)
+    }
+}
+
+#[tonic::async_trait]
+impl<T: DataVal + 'static, U: DataRow<T> + 'static, V: DataStore<T, U> + 'static> AlarmGroupService
+    for AlarmGroupsServiceImpl<T, U, V>
+{
+    /// Retrieves [`AlarmGroupMetadata`] for all alarm groups.
+    async fn get_group_metadata(
+        &self,
+        _: Request<()>,
+    ) -> Result<Response<AlarmGroupMetadata>, Status> {
+        match self.get_all_metadata().await {
+            Ok(metadata) => Ok(Response::new(AlarmGroupMetadata { metadata })),
+            Err(e) => {
+                error!("{}", e);
+                Err(Status::internal(
+                    "Failed to retrieve alarm group metadata. See server logs for details.",
+                ))
+            }
+        }
+    }
+
+    /// Retrieves full [`AlarmGroup`] information for the specified groups.
+    async fn get_groups(
+        &self,
+        request: Request<GroupsRequest>,
+    ) -> Result<Response<AlarmGroups>, Status> {
+        let requested_groups = request.into_inner().groups;
+        match self.get_requested_groups(requested_groups).await {
+            Ok(alarm_groups) => Ok(Response::new(AlarmGroups { alarm_groups })),
+            Err(e) => {
+                error!("{}", e);
+                Err(Status::internal(
+                    "Failed to retrieve alarm groups. See server logs for details.",
+                ))
+            }
+        }
+    }
 }
 
 fn create_metadatum<T: DataVal, U: DataRow<T>>(
@@ -83,330 +183,5 @@ fn sort_groups(a: &AlarmGroup, b: &AlarmGroup) -> Ordering {
             None => Ordering::Less,
         },
         None => Ordering::Greater,
-    }
-}
-
-impl<T: DataVal, U: DataRow<T>, V: DataStore<T, U>> AlarmGroupsServiceImpl<T, U, V> {
-    pub fn new(data_store: V) -> Self {
-        Self {
-            data_store,
-            _row_type: PhantomData,
-            _val_type: PhantomData,
-        }
-    }
-
-    /// Retrieves all alarm group metadata.
-    async fn get_all_metadata(&self) -> Result<Vec<AlarmGroupMetadatum>, DataStoreError> {
-        info!("Query for all alarm group metadata ");
-
-        let alarm_group_query = "
-            SELECT 
-                g.group_name,
-                g.description,
-                g.updated_at,
-                g.updated_by,
-                EXISTS (
-                    SELECT
-                    FROM alarmsapp.user_layouts u
-                    WHERE g.group_name = u.group_name
-                ) AS group_is_user_category
-            FROM 
-                alarmsapp.groups g
-            ORDER BY
-                updated_by,
-                group_name
-            ;
-        ";
-        let query_result = self.data_store.execute_query(alarm_group_query).await?;
-        let mut metadata = rows_to_metadata(query_result)?;
-        metadata.sort_by(|a, b| a.name.cmp(&b.name));
-
-        Ok(metadata)
-    }
-
-    async fn get_requested_groups(
-        &self,
-        specified_groups: Vec<String>,
-    ) -> Result<Vec<AlarmGroup>, DataStoreError> {
-        info!(
-            "Query for alarm groups {:?}, and associated devices ",
-            specified_groups
-        );
-
-        let needed_placeholders: Vec<String> = (1..specified_groups.len())
-            .map(|index| format!("${}", index))
-            .collect();
-
-        // Uses a recursive Common Table Expression (CTE) to build the result rows down to the device level.
-        // That is, users can specify the top-level groups they want, and this SQL query will return all the
-        // child, grandchild, etc. objects under it.
-        let alarm_group_query = format!(
-            "
-            WITH RECURSIVE members AS (
-                SELECT 
-                    group_name,
-                    member_name,
-                    member_is_group
-                FROM 
-                    alarmsapp.group_membership
-                WHERE
-                    group_name IN ({})
-                UNION ALL
-                SELECT
-                    gm.group_name,
-                    gm.member_name,
-                    gm.member_is_group,
-                FROM 
-                    alarmsapp.group_membership gm 
-                    INNER JOIN members m 
-                        ON gm.group_name = m.member_name
-            )
-            SELECT 
-                g.group_name,
-                g.description,
-                g.updated_at,
-                g.updated_by,
-                EXISTS (
-                    SELECT 
-                    FROM alarmsapp.user_layouts u
-                    WHERE g.group_name = u.group_name
-                ) AS group_is_user_category,
-                m.member_name,
-                m.member_is_group
-            FROM
-                alarmsapp.groups g
-                INNER JOIN members m
-                    ON g.group_name = m.group_name
-            ORDER BY 
-                g.group_name, 
-                m.member_name
-            ;
-            ",
-            needed_placeholders.join(", ")
-        );
-
-        let mut query_builder = ParameterizedQuery::new(alarm_group_query);
-        for group in specified_groups {
-            query_builder.bind(QueryParameter::STR(group));
-        }
-
-        let query_result = self
-            .data_store
-            .execute_parameterized_query(query_builder)
-            .await?;
-        let mut groups = rows_to_groups(query_result)?;
-        groups.sort_by(sort_groups);
-
-        Ok(groups)
-    }
-}
-
-#[tonic::async_trait]
-impl<T: DataVal + 'static, U: DataRow<T> + 'static, V: DataStore<T, U> + 'static> AlarmGroupService
-    for AlarmGroupsServiceImpl<T, U, V>
-{
-    /// Retrieves [`AlarmGroupMetadata`] for all alarm groups.
-    async fn get_group_metadata(
-        &self,
-        _: Request<()>,
-    ) -> Result<Response<AlarmGroupMetadata>, Status> {
-        match self.get_all_metadata().await {
-            Ok(metadata) => Ok(Response::new(AlarmGroupMetadata { metadata })),
-            Err(e) => {
-                error!("{}", e);
-                Err(Status::internal(
-                    "Failed to retrieve alarm group metadata. See server logs for details.",
-                ))
-            }
-        }
-    }
-
-    /// Retrieves full [`AlarmGroup`] information for the specified groups.
-    async fn get_groups(
-        &self,
-        request: Request<GroupsRequest>,
-    ) -> Result<Response<AlarmGroups>, Status> {
-        let requested_groups = request.into_inner().groups;
-        match self.get_requested_groups(requested_groups).await {
-            Ok(alarm_groups) => Ok(Response::new(AlarmGroups { alarm_groups })),
-            Err(e) => {
-                error!("{}", e);
-                Err(Status::internal(
-                    "Failed to retrieve alarm groups. See server logs for details.",
-                ))
-            }
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    use chrono::TimeZone;
-
-    use rust_db_lib::test_utils::{TestDataStore, TestVal};
-
-    use std::vec;
-
-    struct TestRow {
-        group_name: String,
-        description: String,
-        updated_at: chrono::DateTime<chrono::Utc>,
-        updated_by: String,
-        group_is_user_category: bool,
-        member_name: String,
-        member_is_group: bool,
-    }
-    impl Clone for TestRow {
-        fn clone(&self) -> Self {
-            Self {
-                group_name: self.group_name.clone(),
-                description: self.description.clone(),
-                updated_at: self.updated_at.clone(),
-                updated_by: self.updated_by.clone(),
-                group_is_user_category: self.group_is_user_category.clone(),
-                member_name: self.member_name.clone(),
-                member_is_group: self.member_is_group.clone(),
-            }
-        }
-    }
-    impl DataRow<TestVal> for TestRow {
-        fn get(&self, column_name: &str) -> TestVal {
-            match column_name {
-                "description" => {
-                    let mut val = TestVal::new();
-                    val.test_string = Some(self.description.clone());
-                    val
-                }
-                "group_is_user_category" => {
-                    let mut val = TestVal::new();
-                    val.test_bool = Some(self.group_is_user_category.clone());
-                    val
-                }
-                "group_name" => {
-                    let mut val = TestVal::new();
-                    val.test_string = Some(self.group_name.clone());
-                    val
-                }
-                "member_is_group" => {
-                    let mut val = TestVal::new();
-                    val.test_bool = Some(self.member_is_group.clone());
-                    val
-                }
-                "member_name" => {
-                    let mut val = TestVal::new();
-                    val.test_string = Some(self.member_name.clone());
-                    val
-                }
-                "updated_at" => {
-                    let mut val = TestVal::new();
-                    val.test_datetime = Some(self.updated_at.clone());
-                    val
-                }
-                "updated_by" => {
-                    let mut val = TestVal::new();
-                    val.test_string = Some(self.updated_by.clone());
-                    val
-                }
-                _ => TestVal::new(),
-            }
-        }
-    }
-
-    fn row1() -> TestRow {
-        TestRow {
-            group_name: "Group1".to_string(),
-            description: "Description 1".to_string(),
-            updated_at: chrono::Utc
-                .with_ymd_and_hms(2024, 1, 1, 0, 0, 0)
-                .single()
-                .expect("Date could not be calculated"),
-            updated_by: "User1".to_string(),
-            group_is_user_category: false,
-            member_name: "G:AMANDA1".to_string(),
-            member_is_group: true,
-        }
-    }
-    fn row2() -> TestRow {
-        TestRow {
-            group_name: "Group2".to_string(),
-            description: "Description 2".to_string(),
-            updated_at: chrono::Utc
-                .with_ymd_and_hms(2024, 1, 2, 0, 0, 0)
-                .single()
-                .expect("Date could not be calculated"),
-            updated_by: "User2".to_string(),
-            group_is_user_category: true,
-            member_name: "G:AMANDA2".to_string(),
-            member_is_group: false,
-        }
-    }
-
-    #[tokio::test]
-    async fn test_get_group_metadata() {
-        let service = AlarmGroupsServiceImpl {
-            data_store: TestDataStore::new(vec![row1(), row2()]),
-            _row_type: PhantomData,
-            _val_type: PhantomData,
-        };
-        let result = service.get_group_metadata(Request::new(())).await;
-        assert!(result.is_ok());
-        let response = result.unwrap().into_inner();
-        assert_eq!(response.metadata.len(), 2);
-        for (index, value) in response.metadata.iter().enumerate() {
-            let index_text = (index + 1).to_string();
-            let time = chrono::Utc
-                .with_ymd_and_hms(2024, 1, (index + 1).try_into().unwrap(), 0, 0, 0)
-                .single()
-                .expect("Date could not be calculated");
-            assert_eq!(value.name, format!("Group{}", index_text));
-            assert_eq!(value.description, format!("Description {}", index_text));
-            assert_eq!(
-                value.updated_at,
-                Some(prost_types::Timestamp {
-                    seconds: time.timestamp(),
-                    nanos: time.timestamp_subsec_nanos() as i32,
-                })
-            );
-            assert_eq!(value.updated_by, format!("User{}", index_text));
-            assert_eq!(value.is_user_category, index == 1);
-        }
-    }
-
-    #[tokio::test]
-    async fn test_get_groups() {
-        let service = AlarmGroupsServiceImpl {
-            data_store: TestDataStore::new(vec![row2()]),
-            _row_type: PhantomData,
-            _val_type: PhantomData,
-        };
-        let result = service
-            .get_groups(Request::new(GroupsRequest {
-                groups: vec!["Group2".to_string()],
-            }))
-            .await;
-        assert!(result.is_ok());
-        let response = result.unwrap().into_inner();
-        assert_eq!(response.alarm_groups.len(), 1);
-        let value = response.alarm_groups.first().unwrap();
-        let metadata = value.metadata.as_ref().unwrap();
-        assert_eq!(metadata.name, "Group2");
-        assert_eq!(metadata.description, "Description 2");
-        let time = chrono::Utc
-            .with_ymd_and_hms(2024, 1, 2, 0, 0, 0)
-            .single()
-            .expect("Date could not be calculated");
-        assert_eq!(
-            metadata.updated_at,
-            Some(prost_types::Timestamp {
-                seconds: time.timestamp(),
-                nanos: time.timestamp_subsec_nanos() as i32,
-            })
-        );
-        assert_eq!(metadata.updated_by, "User2");
-        assert!(metadata.is_user_category);
-        assert_eq!(value.devices, vec!["G:AMANDA2"]);
-        assert!(value.groups.is_empty());
     }
 }

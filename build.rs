@@ -1,3 +1,7 @@
+//! Build script for this application.
+//! Sets up the gRPC interfaces and constructs the Rust implementations of the
+//! gRPC message objects.
+
 use std::{env, path::PathBuf, slice::from_ref};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {

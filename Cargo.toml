@@ -1,43 +1,30 @@
 [package]
 name = "grpc-alarms-db"
-version = "0.3.1"
+version = "0.3.2"
 edition = "2024"
 
 [dependencies]
-# These dependencies are used to support Rust's async environment.
-
-tokio = { version = "1.49.0", features = ["rt-multi-thread", "macros", "rt"] }
-tracing-subscriber = { version = "0.3.22", features = ["chrono"] }
-tracing = { version = "0.1.44", features = ["log"] }
-
-# These crates are used to implement the gRPC web service.
-
-tonic = "0.14.3"
-tonic-health = "0.14.3"
-tonic-prost = "0.14.3"
-tonic-reflection = "0.14.3"
-
-# These crates provide runtime support for protobufs.
+chrono = { version = "0.4.44", features = ["alloc", "serde"] }
 prost = "0.14.3"
 prost-types = "0.14.3"
-
-# This crate provides ergonomic environment variable interaction
-rust-env-var-lib = { git = "https://github.com/fermi-ad/rust-env-var-lib.git", tag = "v1.1.0" }
-
-# This crate provides access to PostgreSQL.
-rust-db-lib = { git = "https://github.com/fermi-ad/rust-db-lib.git", tag = "v4.1.1" }
-
-# This crate generates current date and time
-chrono = { version = "0.4.43", features = ["alloc", "serde"] }
+rust-db-lib = { git = "https://github.com/fermi-ad/rust-db-lib.git", tag = "v5.0.0" }
+rust-env-var-lib = { git = "https://github.com/fermi-ad/rust-env-var-lib.git", tag = "v1.2.0" }
+tokio = { version = "1.50.0", features = ["rt-multi-thread", "macros", "rt"] }
+tonic = "0.14.5"
+tonic-health = "0.14.5"
+tonic-prost = "0.14.5"
+tracing = { version = "0.1.44", features = ["log"] }
+tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 
 [build-dependencies]
+tonic-prost-build = "0.14.5"
+protoc-bin-vendored = "3.2.0"
 
-# This crate translates protobuf source files into a Rust module.
-tonic-prost-build = "0.14.3"
-protoc-bin-vendored = "3.2"
+[dev-dependencies]
+rust-db-lib = { git = "https://github.com/fermi-ad/rust-db-lib.git", tag = "v5.0.0", features = ["testing-utils"] }
+
 
 [profile.release]
-opt-level = 'z'
 lto = true
 
 [workspace.lints.rust]

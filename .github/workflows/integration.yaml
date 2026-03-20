@@ -10,11 +10,15 @@ on:
 
 jobs:
   run-tests-and-coverage:
-    uses: fermi-ad/.github/.github/workflows/rust-integration.yaml@e0c90cb1aa154991276dbdd6a4eccfd676b5208b
+    uses: fermi-ad/.github/.github/workflows/rust-integration.yaml@f5b1570438803675367730e055d4a3e1983be9d1
     secrets: inherit
     permissions:
       contents: write
       pull-requests: write
     with:
+      # The "queries.rs" files just contain static constants, which are inlined at compile time. Because of this, the coverage reporter
+      # shows the source files as lacking coverage.
+      # Similarly, "services/mod.rs" just contains the declarations of the services submodules, and is also inlined.
+      coverage-exclude: "|queries.rs|services/mod.rs" 
       pull-git-submodules: true
       references-internal-git-repo: true
