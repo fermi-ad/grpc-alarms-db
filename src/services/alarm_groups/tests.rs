@@ -19,11 +19,11 @@ impl Clone for TestRow {
         Self {
             group_name: self.group_name.clone(),
             description: self.description.clone(),
-            updated_at: self.updated_at.clone(),
+            updated_at: self.updated_at,
             updated_by: self.updated_by.clone(),
-            group_is_user_category: self.group_is_user_category.clone(),
+            group_is_user_category: self.group_is_user_category,
             member_name: self.member_name.clone(),
-            member_is_group: self.member_is_group.clone(),
+            member_is_group: self.member_is_group,
         }
     }
 }
@@ -37,7 +37,7 @@ impl DataRow<TestVal> for TestRow {
             }
             "group_is_user_category" => {
                 let mut val = TestVal::new();
-                val.test_bool = Some(self.group_is_user_category.clone());
+                val.test_bool = Some(self.group_is_user_category);
                 val
             }
             "group_name" => {
@@ -47,7 +47,7 @@ impl DataRow<TestVal> for TestRow {
             }
             "member_is_group" => {
                 let mut val = TestVal::new();
-                val.test_bool = Some(self.member_is_group.clone());
+                val.test_bool = Some(self.member_is_group);
                 val
             }
             "member_name" => {
@@ -57,7 +57,7 @@ impl DataRow<TestVal> for TestRow {
             }
             "updated_at" => {
                 let mut val = TestVal::new();
-                val.test_datetime = Some(self.updated_at.clone());
+                val.test_datetime = Some(self.updated_at);
                 val
             }
             "updated_by" => {
