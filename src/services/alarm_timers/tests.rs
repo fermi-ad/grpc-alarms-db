@@ -15,9 +15,9 @@ impl DataRow<TestVal> for TestRow {
         let mut val = TestVal::new();
         match col {
             "device" => val.test_string = Some(self.device.clone()),
-            "end_time" => val.test_datetime = Some(self.end_time.clone()),
+            "end_time" => val.test_datetime = Some(self.end_time),
             "timer_type" => val.test_string = Some(self.timer_type.clone()),
-            "updated_at" => val.test_datetime = Some(self.updated_at.clone()),
+            "updated_at" => val.test_datetime = Some(self.updated_at),
             "updated_by" => val.test_string = Some(self.updated_by.clone()),
             _ => (),
         };
@@ -28,9 +28,9 @@ impl Clone for TestRow {
     fn clone(&self) -> Self {
         TestRow {
             device: self.device.clone(),
-            end_time: self.end_time.clone(),
+            end_time: self.end_time,
             timer_type: self.timer_type.clone(),
-            updated_at: self.updated_at.clone(),
+            updated_at: self.updated_at,
             updated_by: self.updated_by.clone(),
         }
     }
@@ -41,9 +41,9 @@ async fn test_read_bypass_reminders() {
     let test_time = Utc::now();
     let test_row = TestRow {
         device: "Device1".to_string(),
-        end_time: test_time.clone(),
+        end_time: test_time,
         timer_type: TimerType::BypassReminder.as_str_name().to_string(),
-        updated_at: test_time.clone(),
+        updated_at: test_time,
         updated_by: "UserA".to_string(),
     };
     let data_store = TestDataStore {
@@ -79,9 +79,9 @@ async fn test_read_snooze_timers() {
     let test_time = Utc::now();
     let test_row = TestRow {
         device: "Device1".to_string(),
-        end_time: test_time.clone(),
+        end_time: test_time,
         timer_type: TimerType::Snooze.as_str_name().to_string(),
-        updated_at: test_time.clone(),
+        updated_at: test_time,
         updated_by: "UserA".to_string(),
     };
     let data_store = TestDataStore {
@@ -238,20 +238,20 @@ fn test_validate_timer_input() {
 
     let mut invalid_timer = invalid_alarm_timer();
     invalid_timer.device = valid_device.clone();
-    invalid_timer.end_time = valid_time.clone();
+    invalid_timer.end_time = valid_time;
     let result = validate_timer_input(invalid_timer);
     assert!(result.is_err());
 
     let mut invalid_timer = invalid_alarm_timer();
     invalid_timer.device = valid_device.clone();
-    invalid_timer.end_time = valid_time.clone();
+    invalid_timer.end_time = valid_time;
     invalid_timer.timer_type = 897;
     let result = validate_timer_input(invalid_timer);
     assert!(result.is_err());
 
     let mut invalid_timer = invalid_alarm_timer();
     invalid_timer.device = valid_device.clone();
-    invalid_timer.end_time = valid_time.clone();
+    invalid_timer.end_time = valid_time;
     invalid_timer.timer_type = TimerType::Snooze as i32;
     let result = validate_timer_input(invalid_timer);
     assert!(result.is_err());
