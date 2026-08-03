@@ -1,31 +1,33 @@
 [package]
 name = "grpc-alarms-db"
-version = "0.3.3"
+version = "0.3.4"
 edition = "2024"
 
 [dependencies]
-chrono = { version = "0.4.44", features = ["alloc", "serde"] }
-prost = "0.14.3"
-prost-types = "0.14.3"
-rust-db-lib = { git = "https://github.com/fermi-ad/rust-db-lib.git", tag = "v5.0.1" }
+chrono = "0.4"
+prost = "0.14"
+rust-db-lib = { git = "https://github.com/fermi-ad/rust-db-lib.git", tag = "v6.0.0" }
 rust-env-var-lib = { git = "https://github.com/fermi-ad/rust-env-var-lib.git", tag = "v1.2.0" }
-tokio = { version = "1.52.1", features = ["rt-multi-thread", "macros", "rt"] }
-tonic = "0.14.5"
-tonic-health = "0.14.5"
-tonic-prost = "0.14.5"
-tracing = { version = "0.1.44", features = ["log"] }
-tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
+rust-grpc-lib = { git = "https://github.com/fermi-ad/rust-grpc-lib.git", tag = "v3.1.0" }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "rt"] }
+tonic = "0.14"
+tonic-health = "0.14"
+tonic-prost = "0.14"
+tracing = { version = "0.1", features = ["log"] }
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 [build-dependencies]
-tonic-prost-build = "0.14.5"
-protoc-bin-vendored = "3.2.0"
+rust-grpc-lib = { git = "https://github.com/fermi-ad/rust-grpc-lib.git", tag = "v3.1.0", features = ["build"] }
 
 [dev-dependencies]
-rust-db-lib = { git = "https://github.com/fermi-ad/rust-db-lib.git", tag = "v5.0.1", features = ["testing-utils"] }
-
+rust-db-lib = { git = "https://github.com/fermi-ad/rust-db-lib.git", tag = "v6.0.0", features = ["testing-utils"] }
 
 [profile.release]
 lto = true
+codegen-units = 1
+opt-level = 3
+strip = "symbols"
+panic = "abort"
 
 [workspace.lints.rust]
 ambiguous_negative_literals = "warn"

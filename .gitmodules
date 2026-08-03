@@ -1,3 +1,0 @@
-[submodule "extern/proto-defs"]
-	path = extern/proto-defs
-	url = https://github.com/fermi-ad/interface-definitions.git

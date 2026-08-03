@@ -2,18 +2,18 @@
 //!
 //! Contains logic for retrieval and storage of user alarm layout settings.
 
-pub use proto::user_layouts_service_server::UserLayoutsServiceServer;
-
-use proto::{UserLayout, UserLayouts, user_layouts_service_server::UserLayoutsService};
+use crate::proto::{
+    google::protobuf::Empty,
+    services::alarm_user_layouts::{
+        UserLayout, UserLayouts, user_layouts_service_server::UserLayoutsService,
+    },
+};
 use queries::GET_ALL_LAYOUTS_QUERY;
 use rust_db_lib::{DataRow, DataStore, DataStoreError, DataVal};
 use std::{collections::HashMap, marker::PhantomData};
 use tonic::{Request, Response, Status};
 use tracing::{error, info};
 
-mod proto {
-    tonic::include_proto!("services.alarm_user_layouts");
-}
 mod queries;
 
 #[cfg(test)]
@@ -26,9 +26,7 @@ pub struct UserLayoutsServiceImpl<T: DataVal, U: DataRow<T>, V: DataStore<T, U>>
     _val_type: PhantomData<T>,
 }
 
-impl<T: DataVal + 'static, U: DataRow<T> + 'static, V: DataStore<T, U> + 'static>
-    UserLayoutsServiceImpl<T, U, V>
-{
+impl<T: DataVal, U: DataRow<T>, V: DataStore<T, U>> UserLayoutsServiceImpl<T, U, V> {
     pub fn new(data_store: V) -> Self {
         Self {
             data_store,
@@ -39,7 +37,7 @@ impl<T: DataVal + 'static, U: DataRow<T> + 'static, V: DataStore<T, U> + 'static
 
     /// Retrieves all top-level groups for each user. Used when generating the alarm screen display.
     async fn get_layouts(&self) -> Result<Vec<UserLayout>, DataStoreError> {
-        info!("Query for user layouts ");
+        info!("Query for user layouts");
 
         let rows = self.data_store.execute_query(GET_ALL_LAYOUTS_QUERY).await?;
         let mut layout_builder = HashMap::new();
@@ -55,22 +53,22 @@ impl<T: DataVal + 'static, U: DataRow<T> + 'static, V: DataStore<T, U> + 'static
                 .groups
                 .push(group_name);
         }
-        let mut sortable_rows = layout_builder.into_values().collect::<Vec<UserLayout>>();
+        let mut sortable_rows = layout_builder.into_values().collect::<Vec<_>>();
         sortable_rows.sort_by(|a, b| a.user_name.cmp(&b.user_name));
         Ok(sortable_rows)
     }
 }
 
 #[tonic::async_trait]
-impl<T: DataVal + 'static, U: DataRow<T> + 'static, V: DataStore<T, U> + 'static> UserLayoutsService
+impl<T: DataVal, U: DataRow<T>, V: DataStore<T, U>> UserLayoutsService
     for UserLayoutsServiceImpl<T, U, V>
 {
     /// Translates query results from the DataStore into gRPC `UserLayouts` messages.
-    async fn get_user_layouts(&self, _: Request<()>) -> Result<Response<UserLayouts>, Status> {
+    async fn get_user_layouts(&self, _: Request<Empty>) -> Result<Response<UserLayouts>, Status> {
         match self.get_layouts().await {
             Ok(layouts) => Ok(Response::new(UserLayouts { layouts })),
             Err(e) => {
-                error!("{}", e);
+                error!("{e}");
                 Err(Status::internal(
                     "Failed to retrieve user layouts. See server logs for details.",
                 ))

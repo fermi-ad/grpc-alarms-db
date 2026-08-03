@@ -1,6 +1,4 @@
-FROM debian:trixie-slim
-
-RUN apt-get update -y && apt-get install -y libssl3 && apt-get clean -y
+FROM adregistry.fnal.gov/dev-containers/redhat-ubi9-minimal
 
 COPY target/release/grpc-alarms-db /app/grpc-alarms-db 
 

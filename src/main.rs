@@ -4,44 +4,57 @@
 //! Encapsulates the logic for connecting to the database so consuming services are unaware of
 //! the specifics of the database implementation.
 
-use rust_db_lib::{DataRow, DataStore, DataVal, postgres::PostgresDataStore};
+use proto::services::{
+    alarm_groups::alarm_group_service_server::AlarmGroupServiceServer,
+    alarm_timers::alarm_timer_service_server::AlarmTimerServiceServer,
+    alarm_user_layouts::user_layouts_service_server::UserLayoutsServiceServer,
+};
+use rust_db_lib::{
+    DataRow, DataStore, DataVal,
+    postgres::{PostgresConfig, PostgresDataStore},
+};
 use rust_env_var_lib::env_var;
 use services::{
-    alarm_groups::{AlarmGroupServiceServer, AlarmGroupsServiceImpl},
-    alarm_timers::{AlarmTimerServiceServer, AlarmTimersServiceImpl},
-    user_layouts::{UserLayoutsServiceImpl, UserLayoutsServiceServer},
+    alarm_groups::AlarmGroupsServiceImpl, alarm_timers::AlarmTimersServiceImpl,
+    user_layouts::UserLayoutsServiceImpl,
 };
 use std::net::{IpAddr, Ipv6Addr, SocketAddr};
 use tonic::transport::Server;
 use tracing::info;
 
 mod logging;
+mod proto;
 mod services;
 mod utils;
-
-#[cfg(test)]
-mod tests;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     logging::setup_logging();
 
-    let data_store = PostgresDataStore::new().await;
+    let config = build_db_config();
+    let data_store = PostgresDataStore::new(config).await?;
     start_server(data_store).await
+}
+
+fn build_db_config() -> PostgresConfig {
+    PostgresConfig {
+        host: env_var::expect("DATABASE_HOST"),
+        port: env_var::expect("DATABASE_PORT"),
+        username: env_var::expect("DATABASE_USER"),
+        password: env_var::expect("DATABASE_PASS"),
+        db_name: env_var::expect("DATABASE_NAME"),
+        ..Default::default()
+    }
 }
 
 fn generate_server_address() -> SocketAddr {
     let port = env_var::expect("ALARM_GRPC_SERVER_PORT");
     let addr = SocketAddr::new(IpAddr::V6(Ipv6Addr::UNSPECIFIED), port);
-    info!("***** Alarm gRPC Server is running at: {} *******", addr);
+    info!("***** Alarm gRPC Server is running at: {addr} *******");
     addr
 }
 
-async fn start_server<
-    T: DataVal + 'static,
-    U: DataRow<T> + 'static,
-    V: DataStore<T, U> + 'static,
->(
+async fn start_server<T: DataVal, U: DataRow<T>, V: DataStore<T, U>>(
     data_store: V,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let alarm_group_service =

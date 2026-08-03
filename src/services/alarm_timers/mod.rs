@@ -2,19 +2,16 @@
 //!
 //! Interacts with the database to store and retrieve data related to alarm timers (snooze and bypass reminders).
 
-pub use proto::alarm_timer_service_server::AlarmTimerServiceServer;
-
-use crate::{
-    services::alarm_timers::queries::{
-        CREATE_TIMER_QUERY, DELETE_TIMER_QUERY, READ_SNOOZE_TIMERS,
-        READ_USER_BYPASS_REMINDERS_QUERY, UPDATE_TIMER_QUERY,
-    },
-    utils,
-};
-use chrono::{DateTime, Utc};
-use proto::{
+use crate::proto::google::protobuf::{Empty, Timestamp};
+use crate::proto::services::alarm_timers::{
     AlarmTimer, AlarmTimers, DeleteRequest, ReadRequest, TimerType,
     alarm_timer_service_server::AlarmTimerService,
+};
+use crate::utils;
+use chrono::{DateTime, Utc};
+use queries::{
+    CREATE_TIMER_QUERY, DELETE_TIMER_QUERY, READ_SNOOZE_TIMERS, READ_USER_BYPASS_REMINDERS_QUERY,
+    UPDATE_TIMER_QUERY,
 };
 use rust_db_lib::{
     DataRow, DataStore, DataStoreError, DataVal, ParameterizedQuery, QueryParameter,
@@ -23,9 +20,6 @@ use std::marker::PhantomData;
 use tonic::{Request, Response, Status};
 use tracing::{error, info};
 
-mod proto {
-    tonic::include_proto!("services.alarm_timers");
-}
 mod queries;
 
 #[cfg(test)]
@@ -50,37 +44,34 @@ impl<T: DataVal, U: DataRow<T>, V: DataStore<T, U>> AlarmTimersServiceImpl<T, U,
         info!(
             "Setting alarm timer for device: {}, type: {}",
             timer.device,
-            timer.timer_type.as_str_name()
+            timer.timer_type.as_string_name()
         );
 
-        let query = CREATE_TIMER_QUERY.to_string();
-        let mut query_builder = ParameterizedQuery::new(query);
-        query_builder.bind(QueryParameter::STR(timer.device));
-        query_builder.bind(QueryParameter::DATETIME(timer.end_time));
-        query_builder.bind(QueryParameter::STR(
-            timer.timer_type.as_str_name().to_string(),
-        ));
-        query_builder.bind(QueryParameter::STR(timer.updated_by));
+        let mut query_builder = ParameterizedQuery::new(CREATE_TIMER_QUERY);
+        query_builder.bind(QueryParameter::Str(timer.device));
+        query_builder.bind(QueryParameter::DateTime(timer.end_time));
+        query_builder.bind(QueryParameter::Str(timer.timer_type.as_string_name()));
+        query_builder.bind(QueryParameter::Str(timer.updated_by));
         self.data_store
             .execute_parameterized_query(query_builder)
-            .await
-            .map(|_| ())
+            .await?;
+        Ok(())
     }
 
     async fn delete_impl(&self, timer: ValidDeleteRequest) -> Result<(), DataStoreError> {
         info!(
             "Deleting alarm timer for device: {}, type: {}",
-            timer.device, timer.timer_type
+            timer.device,
+            timer.timer_type.as_string_name()
         );
 
-        let query = DELETE_TIMER_QUERY.to_string();
-        let mut query_builder = ParameterizedQuery::new(query);
-        query_builder.bind(QueryParameter::STR(timer.device));
-        query_builder.bind(QueryParameter::STR(timer.timer_type));
+        let mut query_builder = ParameterizedQuery::new(DELETE_TIMER_QUERY);
+        query_builder.bind(QueryParameter::Str(timer.device));
+        query_builder.bind(QueryParameter::Str(timer.timer_type.as_string_name()));
         self.data_store
             .execute_parameterized_query(query_builder)
-            .await
-            .map(|_| ())
+            .await?;
+        Ok(())
     }
 
     async fn read_bypass_reminders(
@@ -92,12 +83,9 @@ impl<T: DataVal, U: DataRow<T>, V: DataStore<T, U>> AlarmTimersServiceImpl<T, U,
             request.user
         );
 
-        let query = READ_USER_BYPASS_REMINDERS_QUERY.to_string();
-        let mut query_builder = ParameterizedQuery::new(query);
-        query_builder.bind(QueryParameter::STR(
-            TimerType::BypassReminder.as_str_name().to_string(),
-        ));
-        query_builder.bind(QueryParameter::STR(request.user));
+        let mut query_builder = ParameterizedQuery::new(READ_USER_BYPASS_REMINDERS_QUERY);
+        query_builder.bind(QueryParameter::Str(request.timer_type.as_string_name()));
+        query_builder.bind(QueryParameter::Str(request.user));
         let rows = self
             .data_store
             .execute_parameterized_query(query_builder)
@@ -115,135 +103,147 @@ impl<T: DataVal, U: DataRow<T>, V: DataStore<T, U>> AlarmTimersServiceImpl<T, U,
         info!(
             "Updating alarm timer for device: {}, type: {}",
             timer.device,
-            timer.timer_type.as_str_name()
+            timer.timer_type.as_string_name()
         );
-        let query = UPDATE_TIMER_QUERY.to_string();
-        let mut query_builder = ParameterizedQuery::new(query);
-        query_builder.bind(QueryParameter::DATETIME(timer.end_time));
-        query_builder.bind(QueryParameter::STR(timer.updated_by));
-        query_builder.bind(QueryParameter::STR(timer.device));
-        query_builder.bind(QueryParameter::STR(
-            timer.timer_type.as_str_name().to_string(),
-        ));
+        let mut query_builder = ParameterizedQuery::new(UPDATE_TIMER_QUERY);
+        query_builder.bind(QueryParameter::DateTime(timer.end_time));
+        query_builder.bind(QueryParameter::Str(timer.updated_by));
+        query_builder.bind(QueryParameter::Str(timer.device));
+        query_builder.bind(QueryParameter::Str(timer.timer_type.as_string_name()));
         self.data_store
             .execute_parameterized_query(query_builder)
-            .await
-            .map(|_| ())
+            .await?;
+        Ok(())
     }
 }
 
 #[tonic::async_trait]
-impl<T: DataVal + 'static, U: DataRow<T> + 'static, V: DataStore<T, U> + 'static> AlarmTimerService
+impl<T: DataVal, U: DataRow<T>, V: DataStore<T, U>> AlarmTimerService
     for AlarmTimersServiceImpl<T, U, V>
 {
-    async fn create(&self, request: Request<AlarmTimer>) -> Result<Response<()>, Status> {
+    async fn create(&self, request: Request<AlarmTimer>) -> Result<Response<Empty>, Status> {
         let timer_input = request.into_inner();
         let timer = validate_timer_input(timer_input)?;
 
-        match self.create_impl(timer).await {
-            Ok(_) => Ok(Response::new(())),
-            Err(e) => {
+        self.create_impl(timer)
+            .await
+            .map(|_| Response::new(Empty {}))
+            .map_err(|e| {
                 error!("Error setting alarm timer: {e:?}");
-                Err(Status::internal(
-                    "Failed to set alarm timer. See server logs for details.",
-                ))
-            }
-        }
+                Status::internal("Failed to set alarm timer. See server logs for details.")
+            })
     }
 
-    async fn delete(&self, request: Request<DeleteRequest>) -> Result<Response<()>, Status> {
+    async fn delete(&self, request: Request<DeleteRequest>) -> Result<Response<Empty>, Status> {
         let delete_input = request.into_inner();
         let validated_request = validate_delete_request(delete_input)?;
-        match self.delete_impl(validated_request).await {
-            Ok(_) => Ok(Response::new(())),
-            Err(e) => {
+
+        self.delete_impl(validated_request)
+            .await
+            .map(|_| Response::new(Empty {}))
+            .map_err(|e| {
                 error!("Error deleting alarm timer: {e:?}");
-                Err(Status::internal(
-                    "Failed to delete alarm timer. See server logs for details.",
-                ))
-            }
-        }
+                Status::internal("Failed to delete alarm timer. See server logs for details.")
+            })
     }
 
     async fn read(&self, request: Request<ReadRequest>) -> Result<Response<AlarmTimers>, Status> {
         let read_input = request.into_inner();
         let validated_request = validate_read_request(read_input)?;
 
-        let result = match validated_request.timer_type {
-            TimerType::Snooze => self.read_snooze_timers().await,
-            TimerType::BypassReminder => self.read_bypass_reminders(validated_request).await,
-            TimerType::Unknown => unreachable!(),
-        };
-
-        match result {
-            Ok(alarm_timers) => Ok(Response::new(AlarmTimers { alarm_timers })),
-            Err(e) => {
-                error!("{e:?}");
-                Err(Status::internal(
-                    "Failed to fetch alarm timers. See server logs for details.",
-                ))
-            }
+        match validated_request.timer_type {
+            KnownTimerType::Snooze => self.read_snooze_timers().await,
+            KnownTimerType::Bypass => self.read_bypass_reminders(validated_request).await,
         }
+        .map(|alarm_timers| Response::new(AlarmTimers { alarm_timers }))
+        .map_err(|e| {
+            error!("{e:?}");
+            Status::internal("Failed to fetch alarm timers. See server logs for details.")
+        })
     }
 
-    async fn update(&self, request: Request<AlarmTimer>) -> Result<Response<()>, Status> {
+    async fn update(&self, request: Request<AlarmTimer>) -> Result<Response<Empty>, Status> {
         let timer_input = request.into_inner();
         let timer = validate_timer_input(timer_input)?;
 
-        match self.update_impl(timer).await {
-            Ok(_) => Ok(Response::new(())),
-            Err(e) => {
+        self.update_impl(timer)
+            .await
+            .map(|_| Response::new(Empty {}))
+            .map_err(|e| {
                 error!("Error updating alarm timer: {e:?}");
-                Err(Status::internal(
-                    "Failed to update alarm timer. See server logs for details.",
-                ))
-            }
-        }
+                Status::internal("Failed to update alarm timer. See server logs for details.")
+            })
     }
 }
 
 struct ValidDeleteRequest {
     device: String,
-    timer_type: String,
+    timer_type: KnownTimerType,
+}
+
+enum KnownTimerType {
+    Bypass,
+    Snooze,
+}
+impl KnownTimerType {
+    fn as_string_name(&self) -> String {
+        match self {
+            KnownTimerType::Bypass => TimerType::BypassReminder.as_str_name(),
+            KnownTimerType::Snooze => TimerType::Snooze.as_str_name(),
+        }
+        .to_owned()
+    }
+}
+impl TryFrom<TimerType> for KnownTimerType {
+    type Error = Status;
+
+    fn try_from(value: TimerType) -> Result<Self, Self::Error> {
+        match value {
+            TimerType::BypassReminder => Ok(KnownTimerType::Bypass),
+            TimerType::Snooze => Ok(KnownTimerType::Snooze),
+            TimerType::Unknown => Err(Status::invalid_argument("Invalid \"timer_type\" value.")),
+        }
+    }
 }
 
 struct ValidReadRequest {
-    timer_type: TimerType,
+    timer_type: KnownTimerType,
     user: String,
 }
 
 struct ValidTimerInput {
     device: String,
     end_time: DateTime<Utc>,
-    timer_type: TimerType,
+    timer_type: KnownTimerType,
     updated_by: String,
 }
 
 fn rows_to_timers<T: DataVal, U: DataRow<T>>(
     rows: Vec<U>,
 ) -> Result<Vec<AlarmTimer>, DataStoreError> {
-    let mut timers = Vec::new();
-    for row in rows {
-        let device = row.get("device").to_string()?;
-        let end_time = utils::datetime_to_timestamp(row.get("end_time").to_datetime()?);
+    rows.iter()
+        .map(|row| {
+            let device = row.get("device").to_string()?;
+            let end_time = utils::datetime_to_timestamp(row.get("end_time").to_datetime()?);
 
-        let timer_type_raw = row.get("timer_type").to_string()?;
-        let timer_type = TimerType::from_str_name(&timer_type_raw).unwrap_or(TimerType::Unknown);
+            let timer_type_raw = row.get("timer_type").to_string()?;
+            let timer_type =
+                TimerType::from_str_name(&timer_type_raw).unwrap_or(TimerType::Unknown);
 
-        let updated_at = utils::datetime_to_timestamp(row.get("updated_at").to_datetime()?);
-        let updated_by = row.get("updated_by").to_string()?;
-        timers.push(AlarmTimer {
-            device,
-            end_time,
-            timer_type: timer_type as i32,
-            updated_at,
-            updated_by,
-        });
-    }
-    Ok(timers)
+            let updated_at = utils::datetime_to_timestamp(row.get("updated_at").to_datetime()?);
+            let updated_by = row.get("updated_by").to_string()?;
+            Ok(AlarmTimer {
+                device,
+                end_time,
+                timer_type: timer_type as i32,
+                updated_at,
+                updated_by,
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()
 }
 
-fn timestamp_to_datetime(timestamp: &prost_types::Timestamp) -> Result<DateTime<Utc>, Status> {
+fn timestamp_to_datetime(timestamp: Timestamp) -> Result<DateTime<Utc>, Status> {
     DateTime::from_timestamp(timestamp.seconds, timestamp.nanos as u32).ok_or_else(|| {
         error!("Could not convert {timestamp:?} to Chrono DateTime - out of range");
         Status::invalid_argument(
@@ -256,9 +256,6 @@ fn validate_delete_request(request: DeleteRequest) -> Result<ValidDeleteRequest,
     if request.device.is_empty() {
         return Err(Status::invalid_argument("\"device\" field is required."));
     }
-    if request.timer_type == TimerType::Unknown as i32 {
-        return Err(Status::invalid_argument("Invalid \"timer_type\" value."));
-    }
     let timer_type = TimerType::try_from(request.timer_type).map_err(|err| {
         error!(
             "Could not parse {:?} into TimerType: {err:?}",
@@ -268,14 +265,11 @@ fn validate_delete_request(request: DeleteRequest) -> Result<ValidDeleteRequest,
     })?;
     Ok(ValidDeleteRequest {
         device: request.device.to_lowercase(),
-        timer_type: timer_type.as_str_name().to_string(),
+        timer_type: timer_type.try_into()?,
     })
 }
 
 fn validate_read_request(request: ReadRequest) -> Result<ValidReadRequest, Status> {
-    if request.timer_type == TimerType::Unknown as i32 {
-        return Err(Status::invalid_argument("Invalid \"timer_type\" value."));
-    }
     let timer_type = TimerType::try_from(request.timer_type).map_err(|err| {
         error!(
             "Could not parse '{:?}' into TimerType: {err:?}",
@@ -292,17 +286,17 @@ fn validate_read_request(request: ReadRequest) -> Result<ValidReadRequest, Statu
             }
             request.user.to_lowercase()
         }
-        _ => String::default(),
+        _ => String::new(),
     };
-    Ok(ValidReadRequest { timer_type, user })
+    Ok(ValidReadRequest {
+        timer_type: timer_type.try_into()?,
+        user,
+    })
 }
 
 fn validate_timer_input(timer: AlarmTimer) -> Result<ValidTimerInput, Status> {
     if timer.device.is_empty() {
         return Err(Status::invalid_argument("\"device\" field is required."));
-    }
-    if timer.timer_type == TimerType::Unknown as i32 {
-        return Err(Status::invalid_argument("Invalid \"timer_type\" value."));
     }
     if timer.updated_by.is_empty() {
         return Err(Status::invalid_argument(
@@ -314,11 +308,13 @@ fn validate_timer_input(timer: AlarmTimer) -> Result<ValidTimerInput, Status> {
     }
     Ok(ValidTimerInput {
         device: timer.device.to_lowercase(),
-        end_time: timestamp_to_datetime(&timer.end_time.unwrap())?,
-        timer_type: TimerType::try_from(timer.timer_type).map_err(|err| {
-            error!("Could not parse timer type: {err:?}");
-            Status::invalid_argument("Invalid \"timer_type\" value.")
-        })?,
+        end_time: timestamp_to_datetime(timer.end_time.unwrap())?,
+        timer_type: TimerType::try_from(timer.timer_type)
+            .map_err(|err| {
+                error!("Could not parse timer type: {err:?}");
+                Status::invalid_argument("Invalid \"timer_type\" value.")
+            })?
+            .try_into()?,
         updated_by: timer.updated_by.to_lowercase(),
     })
 }

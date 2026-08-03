@@ -19,6 +19,5 @@ jobs:
       # The "queries.rs" files just contain static constants, which are inlined at compile time. Because of this, the coverage reporter
       # shows the source files as lacking coverage.
       # Similarly, "services/mod.rs" just contains the declarations of the services submodules, and is also inlined.
-      coverage-exclude: "|queries.rs|services/mod.rs" 
-      pull-git-submodules: true
+      coverage-exclude: "|queries.rs|services/mod.rs"
       references-internal-git-repo: true

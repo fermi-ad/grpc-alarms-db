@@ -12,5 +12,4 @@ jobs:
     permissions:
       contents: read
     with:
-      pull-git-submodules: true
       references-internal-git-repo: true

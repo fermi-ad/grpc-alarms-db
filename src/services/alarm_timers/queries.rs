@@ -20,8 +20,8 @@ pub const CREATE_TIMER_QUERY: &str = "
 /// SQL to delete a timer record from the database.
 pub const DELETE_TIMER_QUERY: &str = "
     DELETE FROM alarmsapp.timers t
-    INNER JOIN alarmsapp.timer_types tt ON t.timer_type = tt.type_id
-    WHERE t.device = $1 AND tt.type_name = $2
+    USING alarmsapp.timer_types tt
+    WHERE t.timer_type = tt.type_id AND t.device = $1 AND tt.type_name = $2
 ;";
 
 /// SQL to read bypass reminders for a specific user.
@@ -63,6 +63,6 @@ pub const READ_SNOOZE_TIMERS: &str = "
 pub const UPDATE_TIMER_QUERY: &str = "
     UPDATE alarmsapp.timers
     SET end_time = $1, updated_by = $2
-    INNER JOIN alarmsapp.timer_types ON timer_type = type_id
-    WHERE device = $3 AND type_name = $4
+    FROM alarmsapp.timer_types
+    WHERE timer_type = type_id AND device = $3 AND type_name = $4
 ;";
