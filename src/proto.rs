@@ -1,2 +1,3 @@
-// src/proto.rs  (or wherever you want the module to live)
+//! Module to bring generated protobuf artifacts into the dependency tree.
+
 include!(concat!(env!("OUT_DIR"), "/proto.rs"));
