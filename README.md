@@ -148,7 +148,7 @@ Two GitHub Actions workflows govern the automated lifecycle of this service:
 | Rust Continuous Integration | [`.github/workflows/integration.yaml`](.github/workflows/integration.yaml) | Runs tests and generates code coverage reports |
 | Continuous Deployment | [`.github/workflows/deployment.yaml`](.github/workflows/deployment.yaml) | Builds the release binary, packages the Docker image, and deploys via downstream infrastructure |
 
-Both workflows delegate to shared reusable workflows maintained in the `fermi-ad/.github` organisation repository. Refer to the workflow files for current trigger conditions.
+Both workflows delegate to shared reusable workflows maintained in the `fermi-ad/.github` organization repository. Refer to the workflow files for current trigger conditions.
 
 > **Note on coverage:** The `queries.rs` files (which contain only static SQL string constants inlined at compile time) and `services/mod.rs` (which contains only module declarations) are intentionally excluded from coverage reporting.
 
