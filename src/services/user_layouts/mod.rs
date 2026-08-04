@@ -65,14 +65,12 @@ impl<T: DataVal, U: DataRow<T>, V: DataStore<T, U>> UserLayoutsService
 {
     /// Translates query results from the DataStore into gRPC `UserLayouts` messages.
     async fn get_user_layouts(&self, _: Request<Empty>) -> Result<Response<UserLayouts>, Status> {
-        match self.get_layouts().await {
-            Ok(layouts) => Ok(Response::new(UserLayouts { layouts })),
-            Err(e) => {
+        self.get_layouts()
+            .await
+            .map(|layouts| Response::new(UserLayouts { layouts }))
+            .map_err(|e| {
                 error!("{e}");
-                Err(Status::internal(
-                    "Failed to retrieve user layouts. See server logs for details.",
-                ))
-            }
-        }
+                Status::internal("Failed to retrieve user layouts. See server logs for details.")
+            })
     }
 }

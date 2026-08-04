@@ -22,6 +22,22 @@ rust-grpc-lib = { git = "https://github.com/fermi-ad/rust-grpc-lib.git", tag = "
 [dev-dependencies]
 rust-db-lib = { git = "https://github.com/fermi-ad/rust-db-lib.git", tag = "v6.0.0", features = ["testing-utils"] }
 
+# Release profile tuned for a single-binary microservice deployed in a container.
+#
+# lto = true          — link-time optimisation across all crates; reduces binary size and improves
+#                       inlining at the cost of longer link times (acceptable in CI, not in dev).
+# codegen-units = 1   — disables parallel code generation; allows LLVM to optimise across the
+#                       entire crate at once, complementing LTO.
+# opt-level = 3       — maximum optimisation; the default for release is already 3, stated
+#                       explicitly here for clarity.
+# strip = "symbols"   — removes debug symbols from the final binary, reducing image size.
+#                       Note: core dumps from production will not contain symbol information.
+#                       If post-mortem debugging is ever needed, build without this flag.
+# panic = "abort"     — terminates the process immediately on panic rather than unwinding the
+#                       stack. This means destructors (Drop impls) will NOT run on panic.
+#                       Acceptable here because the service has no resources that require
+#                       graceful cleanup on panic (the OS reclaims file handles, sockets, etc.).
+#                       Produces a smaller binary and avoids the unwinding machinery.
 [profile.release]
 lto = true
 codegen-units = 1

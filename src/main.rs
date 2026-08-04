@@ -27,6 +27,9 @@ mod proto;
 mod services;
 mod utils;
 
+#[cfg(test)]
+mod tests;
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     logging::setup_logging();

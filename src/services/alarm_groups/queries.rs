@@ -20,7 +20,7 @@ pub const GROUP_DETAILS_QUERY: &str = "
         SELECT
             gm.group_name,
             gm.member_name,
-            gm.member_is_group,
+            gm.member_is_group
         FROM 
             alarmsapp.group_membership gm 
             INNER JOIN members m 

@@ -295,26 +295,34 @@ fn validate_read_request(request: ReadRequest) -> Result<ValidReadRequest, Statu
 }
 
 fn validate_timer_input(timer: AlarmTimer) -> Result<ValidTimerInput, Status> {
-    if timer.device.is_empty() {
+    let device = if timer.device.is_empty() {
         return Err(Status::invalid_argument("\"device\" field is required."));
-    }
-    if timer.updated_by.is_empty() {
+    } else {
+        timer.device.to_lowercase()
+    };
+
+    let updated_by = if timer.updated_by.is_empty() {
         return Err(Status::invalid_argument(
             "\"updated_by\" field is required.",
         ));
-    }
-    if timer.end_time.is_none() {
-        return Err(Status::invalid_argument("\"end_time\" field is required."));
-    }
+    } else {
+        timer.updated_by.to_lowercase()
+    };
+
+    let timestamp = match timer.end_time {
+        None => return Err(Status::invalid_argument("\"end_time\" field is required.")),
+        Some(time) => time,
+    };
+
     Ok(ValidTimerInput {
-        device: timer.device.to_lowercase(),
-        end_time: timestamp_to_datetime(timer.end_time.unwrap())?,
+        device,
+        end_time: timestamp_to_datetime(timestamp)?,
         timer_type: TimerType::try_from(timer.timer_type)
             .map_err(|err| {
                 error!("Could not parse timer type: {err:?}");
                 Status::invalid_argument("Invalid \"timer_type\" value.")
             })?
             .try_into()?,
-        updated_by: timer.updated_by.to_lowercase(),
+        updated_by,
     })
 }
