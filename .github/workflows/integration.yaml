@@ -20,5 +20,6 @@ jobs:
       # shows the source files as lacking coverage.
       # Similarly, "services/mod.rs" just contains the declarations of the services submodules, and is also inlined.
       # "proto.rs" simply pulls the generated gRPC code into scope, so is also excluded.
-      coverage-exclude: "|queries.rs|services/mod.rs|proto.rs"
+      # We also do not need coverage reporting on any test files.
+      coverage-exclude: "|queries.rs|services/mod.rs|proto.rs|tests.rs"
       references-internal-git-repo: true
