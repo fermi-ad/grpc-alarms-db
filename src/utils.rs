@@ -2,8 +2,8 @@
 //!
 //! Provides utility functions that have application-wide applicability.
 
+use crate::proto::google::protobuf::Timestamp;
 use chrono::{DateTime, Utc};
-use prost_types::Timestamp;
 
 /// Converts a `DateTime<Utc>` to a Protobuf `Timestamp`.
 /// Wraps the result in `Some` for convenience -> Complex types in Protobuf are often represented as `Option<T>` in Rust.

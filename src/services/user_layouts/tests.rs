@@ -1,5 +1,7 @@
 //! User Layouts Module Tests
 
+use crate::proto::google::protobuf::Empty;
+
 use super::*;
 use rust_db_lib::testing_utils::{TestDataStore, TestVal};
 
@@ -42,13 +44,15 @@ async fn test_get_user_layouts() {
         _row_type: PhantomData,
         _val_type: PhantomData,
     };
-    let result = service.get_user_layouts(Request::new(())).await;
+    let result = service.get_user_layouts(Request::new(Empty {})).await;
     assert!(result.is_ok());
-    let response = result.unwrap().into_inner();
+    let response = result
+        .expect("get_user_layouts should succeed")
+        .into_inner();
     assert_eq!(response.layouts.len(), 2);
     for (index, value) in response.layouts.iter().enumerate() {
         let index_text = (index + 1).to_string();
-        assert_eq!(value.user_name, format!("User{}", index_text));
-        assert_eq!(value.groups, vec![format!("List{}", index_text)]);
+        assert_eq!(value.user_name, format!("User{index_text}"));
+        assert_eq!(value.groups, vec![format!("List{index_text}")]);
     }
 }

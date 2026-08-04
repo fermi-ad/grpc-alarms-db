@@ -1,31 +1,21 @@
 //! Alarm Groups Module Tests
 
+use crate::proto::google::protobuf::{Empty, Timestamp};
+
 use super::*;
-use chrono::TimeZone;
+use chrono::{DateTime, TimeZone, Utc};
 use rust_db_lib::testing_utils::{TestDataStore, TestVal};
 use std::vec;
 
+#[derive(Clone)]
 struct TestRow {
     group_name: String,
     description: String,
-    updated_at: chrono::DateTime<chrono::Utc>,
+    updated_at: DateTime<Utc>,
     updated_by: String,
     group_is_user_category: bool,
     member_name: String,
     member_is_group: bool,
-}
-impl Clone for TestRow {
-    fn clone(&self) -> Self {
-        Self {
-            group_name: self.group_name.clone(),
-            description: self.description.clone(),
-            updated_at: self.updated_at,
-            updated_by: self.updated_by.clone(),
-            group_is_user_category: self.group_is_user_category,
-            member_name: self.member_name.clone(),
-            member_is_group: self.member_is_group,
-        }
-    }
 }
 impl DataRow<TestVal> for TestRow {
     fn get(&self, column_name: &str) -> TestVal {
@@ -74,7 +64,7 @@ fn row1() -> TestRow {
     TestRow {
         group_name: "Group1".to_string(),
         description: "Description 1".to_string(),
-        updated_at: chrono::Utc
+        updated_at: Utc
             .with_ymd_and_hms(2024, 1, 1, 0, 0, 0)
             .single()
             .expect("Date could not be calculated"),
@@ -88,7 +78,7 @@ fn row2() -> TestRow {
     TestRow {
         group_name: "Group2".to_string(),
         description: "Description 2".to_string(),
-        updated_at: chrono::Utc
+        updated_at: Utc
             .with_ymd_and_hms(2024, 1, 2, 0, 0, 0)
             .single()
             .expect("Date could not be calculated"),
@@ -106,26 +96,35 @@ async fn test_get_group_metadata() {
         _row_type: PhantomData,
         _val_type: PhantomData,
     };
-    let result = service.get_group_metadata(Request::new(())).await;
+    let result = service.get_group_metadata(Request::new(Empty {})).await;
     assert!(result.is_ok());
-    let response = result.unwrap().into_inner();
+    let response = result
+        .expect("get_group_metadata should succeed")
+        .into_inner();
     assert_eq!(response.metadata.len(), 2);
     for (index, value) in response.metadata.iter().enumerate() {
         let index_text = (index + 1).to_string();
-        let time = chrono::Utc
-            .with_ymd_and_hms(2024, 1, (index + 1).try_into().unwrap(), 0, 0, 0)
+        let time = Utc
+            .with_ymd_and_hms(
+                2024,
+                1,
+                (index + 1).try_into().expect("index + 1 should fit in u32"),
+                0,
+                0,
+                0,
+            )
             .single()
             .expect("Date could not be calculated");
-        assert_eq!(value.name, format!("Group{}", index_text));
-        assert_eq!(value.description, format!("Description {}", index_text));
+        assert_eq!(value.name, format!("Group{index_text}"));
+        assert_eq!(value.description, format!("Description {index_text}"));
         assert_eq!(
             value.updated_at,
-            Some(prost_types::Timestamp {
+            Some(Timestamp {
                 seconds: time.timestamp(),
                 nanos: time.timestamp_subsec_nanos() as i32,
             })
         );
-        assert_eq!(value.updated_by, format!("User{}", index_text));
+        assert_eq!(value.updated_by, format!("User{index_text}"));
         assert_eq!(value.is_user_category, index == 1);
     }
 }
@@ -143,19 +142,25 @@ async fn test_get_groups() {
         }))
         .await;
     assert!(result.is_ok());
-    let response = result.unwrap().into_inner();
+    let response = result.expect("get_groups should succeed").into_inner();
     assert_eq!(response.alarm_groups.len(), 1);
-    let value = response.alarm_groups.first().unwrap();
-    let metadata = value.metadata.as_ref().unwrap();
+    let value = response
+        .alarm_groups
+        .first()
+        .expect("response should contain at least one group");
+    let metadata = value
+        .metadata
+        .as_ref()
+        .expect("alarm group should have metadata");
     assert_eq!(metadata.name, "Group2");
     assert_eq!(metadata.description, "Description 2");
-    let time = chrono::Utc
+    let time = Utc
         .with_ymd_and_hms(2024, 1, 2, 0, 0, 0)
         .single()
         .expect("Date could not be calculated");
     assert_eq!(
         metadata.updated_at,
-        Some(prost_types::Timestamp {
+        Some(Timestamp {
             seconds: time.timestamp(),
             nanos: time.timestamp_subsec_nanos() as i32,
         })
@@ -164,4 +169,19 @@ async fn test_get_groups() {
     assert!(metadata.is_user_category);
     assert_eq!(value.devices, vec!["G:AMANDA2"]);
     assert!(value.groups.is_empty());
+}
+
+#[tokio::test]
+async fn test_get_groups_empty_request() {
+    let data: Vec<TestRow> = vec![];
+    let service = AlarmGroupsServiceImpl {
+        data_store: TestDataStore::new(data),
+        _row_type: PhantomData,
+        _val_type: PhantomData,
+    };
+    let result = service
+        .get_groups(Request::new(GroupsRequest { groups: vec![] }))
+        .await;
+    assert!(result.is_err());
+    assert_eq!(result.unwrap_err().code(), tonic::Code::InvalidArgument);
 }

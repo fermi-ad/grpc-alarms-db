@@ -3,6 +3,7 @@
 use super::*;
 use rust_db_lib::testing_utils::{TestDataStore, TestVal};
 
+#[derive(Clone)]
 struct TestRow {
     device: String,
     end_time: DateTime<Utc>,
@@ -24,17 +25,6 @@ impl DataRow<TestVal> for TestRow {
         val
     }
 }
-impl Clone for TestRow {
-    fn clone(&self) -> Self {
-        TestRow {
-            device: self.device.clone(),
-            end_time: self.end_time,
-            timer_type: self.timer_type.clone(),
-            updated_at: self.updated_at,
-            updated_by: self.updated_by.clone(),
-        }
-    }
-}
 
 #[tokio::test]
 async fn test_read_bypass_reminders() {
@@ -52,13 +42,13 @@ async fn test_read_bypass_reminders() {
     let service = AlarmTimersServiceImpl::new(data_store);
     let result = service
         .read_bypass_reminders(ValidReadRequest {
-            timer_type: TimerType::BypassReminder,
+            timer_type: KnownTimerType::Bypass,
             user: "UserA".to_string(),
         })
         .await;
     assert!(result.is_ok());
 
-    let timers = result.unwrap();
+    let timers = result.expect("read_bypass_reminders should succeed");
     assert_eq!(timers.len(), 1);
     let timer = &timers[0];
     assert_eq!(timer.device, test_row.device);
@@ -92,13 +82,16 @@ async fn test_read_snooze_timers() {
     let result = service
         .read(Request::new(ReadRequest {
             timer_type: TimerType::Snooze as i32,
-            user: String::default(),
+            user: String::new(),
         }))
         .await;
 
     assert!(result.is_ok());
 
-    let timers = result.unwrap().into_inner().alarm_timers;
+    let timers = result
+        .expect("read snooze timers should succeed")
+        .into_inner()
+        .alarm_timers;
     assert_eq!(timers.len(), 1);
 
     let timer = &timers[0];
@@ -259,10 +252,10 @@ fn test_validate_timer_input() {
 
 #[test]
 fn test_timestamp_to_datetime_out_of_range() {
-    let invalid_timestamp = prost_types::Timestamp {
+    let invalid_timestamp = Timestamp {
         seconds: i64::MAX,
         nanos: i32::MAX,
     };
-    let result = timestamp_to_datetime(&invalid_timestamp);
+    let result = timestamp_to_datetime(invalid_timestamp);
     assert!(result.is_err());
 }

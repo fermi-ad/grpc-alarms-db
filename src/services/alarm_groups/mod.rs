@@ -2,24 +2,20 @@
 //!
 //! Contains logic for retrieving and updating alarm groups.
 //!
-pub use proto::alarm_group_service_server::AlarmGroupServiceServer;
-
-use crate::utils;
-use proto::{
+use crate::proto::google::protobuf::Empty;
+use crate::proto::services::alarm_groups::{
     AlarmGroup, AlarmGroupMetadata, AlarmGroupMetadatum, AlarmGroups, GroupsRequest,
     alarm_group_service_server::AlarmGroupService,
 };
+use crate::utils;
 use queries::{ALL_GROUPS_METADATA_QUERY, GROUP_DETAILS_QUERY};
 use rust_db_lib::{
     DataRow, DataStore, DataStoreError, DataVal, ParameterizedQuery, QueryParameter,
 };
-use std::{cmp::Ordering, collections::HashMap, marker::PhantomData};
+use std::{collections::HashMap, marker::PhantomData};
 use tonic::{Request, Response, Status};
 use tracing::{error, info};
 
-mod proto {
-    tonic::include_proto!("services.alarm_groups");
-}
 mod queries;
 
 #[cfg(test)]
@@ -42,69 +38,62 @@ impl<T: DataVal, U: DataRow<T>, V: DataStore<T, U>> AlarmGroupsServiceImpl<T, U,
 
     /// Retrieves all alarm group metadata.
     async fn get_all_metadata(&self) -> Result<Vec<AlarmGroupMetadatum>, DataStoreError> {
-        info!("Query for all alarm group metadata ");
+        info!("Query for all alarm group metadata");
         let query_result = self
             .data_store
             .execute_query(ALL_GROUPS_METADATA_QUERY)
             .await?;
-        let mut metadata = rows_to_metadata(query_result)?;
-        metadata.sort_by(|a, b| a.name.cmp(&b.name));
-
-        Ok(metadata)
+        query_result
+            .iter()
+            .map(|row| create_metadatum(row, row.get("group_name").to_string()?))
+            .collect::<Result<Vec<_>, DataStoreError>>()
     }
 
     async fn get_requested_groups(
         &self,
         specified_groups: Vec<String>,
     ) -> Result<Vec<AlarmGroup>, DataStoreError> {
-        info!(
-            "Query for alarm groups {:?}, and associated devices ",
-            specified_groups
-        );
+        info!("Query for alarm groups {specified_groups:?}, and associated devices");
 
-        let needed_placeholders: Vec<String> = (1..specified_groups.len())
-            .map(|index| format!("${}", index))
-            .collect();
+        let needed_placeholders = (1..=specified_groups.len())
+            .map(|index| format!("${index}"))
+            .collect::<Vec<_>>()
+            .join(", ");
 
-        // Uses a recursive Common Table Expression (CTE) to build the result rows down to the device level.
-        // That is, users can specify the top-level groups they want, and this SQL query will return all the
-        // child, grandchild, etc. objects under it.
-        let alarm_group_query = format!(GROUP_DETAILS_QUERY!(), needed_placeholders.join(", "));
+        let alarm_group_query =
+            GROUP_DETAILS_QUERY.replace("{group_name_placeholders}", &needed_placeholders);
 
         let mut query_builder = ParameterizedQuery::new(alarm_group_query);
         for group in specified_groups {
-            query_builder.bind(QueryParameter::STR(group));
+            query_builder.bind(QueryParameter::Str(group));
         }
 
         let query_result = self
             .data_store
             .execute_parameterized_query(query_builder)
             .await?;
-        let mut groups = rows_to_groups(query_result)?;
-        groups.sort_by(sort_groups);
-
-        Ok(groups)
+        rows_to_groups(query_result)
     }
 }
 
 #[tonic::async_trait]
-impl<T: DataVal + 'static, U: DataRow<T> + 'static, V: DataStore<T, U> + 'static> AlarmGroupService
+impl<T: DataVal, U: DataRow<T>, V: DataStore<T, U>> AlarmGroupService
     for AlarmGroupsServiceImpl<T, U, V>
 {
     /// Retrieves [`AlarmGroupMetadata`] for all alarm groups.
     async fn get_group_metadata(
         &self,
-        _: Request<()>,
+        _: Request<Empty>,
     ) -> Result<Response<AlarmGroupMetadata>, Status> {
-        match self.get_all_metadata().await {
-            Ok(metadata) => Ok(Response::new(AlarmGroupMetadata { metadata })),
-            Err(e) => {
-                error!("{}", e);
-                Err(Status::internal(
+        self.get_all_metadata()
+            .await
+            .map(|metadata| Response::new(AlarmGroupMetadata { metadata }))
+            .map_err(|e| {
+                error!("{e}");
+                Status::internal(
                     "Failed to retrieve alarm group metadata. See server logs for details.",
-                ))
-            }
-        }
+                )
+            })
     }
 
     /// Retrieves full [`AlarmGroup`] information for the specified groups.
@@ -113,15 +102,18 @@ impl<T: DataVal + 'static, U: DataRow<T> + 'static, V: DataStore<T, U> + 'static
         request: Request<GroupsRequest>,
     ) -> Result<Response<AlarmGroups>, Status> {
         let requested_groups = request.into_inner().groups;
-        match self.get_requested_groups(requested_groups).await {
-            Ok(alarm_groups) => Ok(Response::new(AlarmGroups { alarm_groups })),
-            Err(e) => {
-                error!("{}", e);
-                Err(Status::internal(
-                    "Failed to retrieve alarm groups. See server logs for details.",
-                ))
-            }
+        if requested_groups.is_empty() {
+            return Err(Status::invalid_argument(
+                "\"groups\" field must not be empty.",
+            ));
         }
+        self.get_requested_groups(requested_groups)
+            .await
+            .map(|alarm_groups| Response::new(AlarmGroups { alarm_groups }))
+            .map_err(|e| {
+                error!("{e}");
+                Status::internal("Failed to retrieve alarm groups. See server logs for details.")
+            })
     }
 }
 
@@ -140,17 +132,6 @@ fn create_metadatum<T: DataVal, U: DataRow<T>>(
         updated_by,
         is_user_category,
     })
-}
-
-fn rows_to_metadata<T: DataVal, U: DataRow<T>>(
-    rows: Vec<U>,
-) -> Result<Vec<AlarmGroupMetadatum>, DataStoreError> {
-    let mut metadata = Vec::new();
-    for row in &rows {
-        let metadatum = create_metadatum(row, row.get("group_name").to_string()?)?;
-        metadata.push(metadatum);
-    }
-    Ok(metadata)
 }
 
 fn rows_to_groups<T: DataVal, U: DataRow<T>>(
@@ -174,14 +155,4 @@ fn rows_to_groups<T: DataVal, U: DataRow<T>>(
         }
     }
     Ok(group_builder.into_values().collect())
-}
-
-fn sort_groups(a: &AlarmGroup, b: &AlarmGroup) -> Ordering {
-    match a.metadata.as_ref() {
-        Some(group) => match b.metadata.as_ref() {
-            Some(other_group) => group.name.cmp(&other_group.name),
-            None => Ordering::Less,
-        },
-        None => Ordering::Greater,
-    }
 }
