@@ -1,10 +1,10 @@
-FROM adregistry.fnal.gov/dev-containers/redhat-ubi9-minimal
+FROM adregistry.fnal.gov/dev-containers/redhat-ubi9-minimal@sha256:ec08129f809d3a00e60e040fef825da752872b561e3a20250f3232209907e130
 
-COPY target/release/grpc-alarms-db /app/grpc-alarms-db 
-
-WORKDIR /app
+COPY target/release/grpc-alarms-db /usr/local/bin/grpc-alarms-db
 
 ENV ALARM_GRPC_SERVER_PORT=7055
 EXPOSE 7055
 
-CMD ["./grpc-alarms-db"]
+USER 10001
+
+ENTRYPOINT ["/usr/local/bin/grpc-alarms-db"]
