@@ -2,8 +2,9 @@
 
 use std::collections::HashMap;
 
-use super::*;
 use rust_db_lib::testing_utils::{TestDataStore, TestRow, TestVal};
+
+use super::*;
 
 #[tokio::test]
 async fn test_read_bypass_reminders() {
