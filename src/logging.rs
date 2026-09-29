@@ -2,13 +2,15 @@
 //!
 //! Configures logging for the application.
 
+use std::error::Error;
+
 use tracing_subscriber::{Registry, filter::EnvFilter, fmt::layer, layer::SubscriberExt};
 
 #[cfg(test)]
 mod tests;
 
 /// Configures the runtime environment for logging using tracing
-pub fn setup_logging() {
+pub fn setup_logging() -> Result<(), Box<dyn Error>> {
     let fmt_layer = layer()
         .with_target(false)
         .with_file(true)
@@ -17,5 +19,5 @@ pub fn setup_logging() {
     // at both the application level and for specific crates/modules.
     let level_layer = EnvFilter::from_default_env();
     let subscriber = Registry::default().with(fmt_layer).with(level_layer);
-    tracing::subscriber::set_global_default(subscriber).expect("Failed to set up logger");
+    Ok(tracing::subscriber::set_global_default(subscriber)?)
 }

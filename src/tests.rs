@@ -1,6 +1,5 @@
 //! Main Module Tests
 
-use std::env::set_var;
 use std::time::Duration;
 
 use rust_db_lib::testing_utils::TestDataStore;
@@ -8,22 +7,13 @@ use tokio::time::timeout;
 
 use super::*;
 
-// ── build_db_config ──────────────────────────────────────────────────────────
+//
+// Values for tests with env vars are provided in .cargo/config.toml
+//
 
 #[test]
 fn test_build_db_config_reads_env_vars() {
-    // Safety: test binary is single-process; env mutation is inherently racy
-    // across parallel tests. This test owns all five DATABASE_* vars and does
-    // not share them with any other test in this module.
-    unsafe {
-        set_var("DATABASE_HOST", "db.example.com");
-        set_var("DATABASE_PORT", "5432");
-        set_var("DATABASE_USER", "alice");
-        set_var("DATABASE_PASS", "s3cr3t");
-        set_var("DATABASE_NAME", "alarmsdb");
-    }
-
-    let config = build_db_config();
+    let config = build_db_config().expect("all env vars should be set");
 
     assert_eq!(config.host, "db.example.com");
     assert_eq!(config.port, 5432u16);
@@ -32,20 +22,13 @@ fn test_build_db_config_reads_env_vars() {
     assert_eq!(config.db_name, "alarmsdb");
 }
 
-// ── generate_server_address ──────────────────────────────────────────────────
-
-// ALARM_GRPC_SERVER_PORT = "7055" is injected for all tests via .cargo/config.toml.
-// This test is read-only with respect to env vars and is safe to run in parallel.
-
 #[test]
 fn test_generate_server_address_uses_configured_address_and_port() {
-    let addr = generate_server_address();
+    let addr = generate_server_address().expect("server address should build");
 
     assert_eq!(addr.ip(), IpAddr::V6(Ipv6Addr::UNSPECIFIED));
     assert_eq!(addr.port(), 7055);
 }
-
-// ── Integration ──────────────────────────────────────────────────
 
 #[tokio::test]
 async fn test_start_server_wires_all_services() {
@@ -54,8 +37,5 @@ async fn test_start_server_wires_all_services() {
 
     // The server runs indefinitely — a timeout means it started successfully.
     // An immediate Ok(_) or a panic would indicate a wiring failure.
-    assert!(
-        result.is_err(),
-        "server should still be running after 100ms"
-    );
+    result.expect_err("server should still be running after 100ms");
 }
