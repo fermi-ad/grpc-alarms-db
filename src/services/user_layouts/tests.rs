@@ -1,48 +1,47 @@
 //! User Layouts Module Tests
 
-use crate::proto::google::protobuf::Empty;
+use rust_db_lib::testing_utils::{TestDataStore, TestRow, TestVal};
 
 use super::*;
-use rust_db_lib::testing_utils::{TestDataStore, TestVal};
-
-#[derive(Clone, Debug)]
-struct TestRow {
-    user_name: String,
-    group_name: String,
-}
-impl DataRow<TestVal> for TestRow {
-    fn get(&self, column_name: &str) -> TestVal {
-        match column_name {
-            "user_name" => {
-                let mut result = TestVal::new();
-                result.test_string = Some(self.user_name.clone());
-                result
-            }
-            "group_name" => {
-                let mut result = TestVal::new();
-                result.test_string = Some(self.group_name.clone());
-                result
-            }
-            _ => TestVal::new(),
-        }
-    }
-}
+use crate::proto::google::protobuf::Empty;
 
 #[tokio::test]
 async fn test_get_user_layouts() {
     let service = UserLayoutsServiceImpl {
         data_store: TestDataStore::new(vec![
-            TestRow {
-                group_name: "List1".to_string(),
-                user_name: "User1".to_string(),
-            },
-            TestRow {
-                group_name: "List2".to_string(),
-                user_name: "User2".to_string(),
-            },
+            TestRow::new(HashMap::from([
+                (
+                    "group_name".into(),
+                    TestVal {
+                        test_string: Some("List1".into()),
+                        ..Default::default()
+                    },
+                ),
+                (
+                    "user_name".into(),
+                    TestVal {
+                        test_string: Some("User1".into()),
+                        ..Default::default()
+                    },
+                ),
+            ])),
+            TestRow::new(HashMap::from([
+                (
+                    "group_name".into(),
+                    TestVal {
+                        test_string: Some("List2".into()),
+                        ..Default::default()
+                    },
+                ),
+                (
+                    "user_name".into(),
+                    TestVal {
+                        test_string: Some("User2".into()),
+                        ..Default::default()
+                    },
+                ),
+            ])),
         ]),
-        _row_type: PhantomData,
-        _val_type: PhantomData,
     };
     let result = service.get_user_layouts(Request::new(Empty {})).await;
     assert!(result.is_ok());

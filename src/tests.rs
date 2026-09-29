@@ -1,11 +1,12 @@
 //! Main Module Tests
 
-use super::*;
-use rust_db_lib::testing_utils::{TestDataStore, TestVal};
 use std::env::set_var;
-use std::net::{IpAddr, Ipv6Addr};
 use std::time::Duration;
+
+use rust_db_lib::testing_utils::TestDataStore;
 use tokio::time::timeout;
+
+use super::*;
 
 // ── build_db_config ──────────────────────────────────────────────────────────
 
@@ -46,17 +47,9 @@ fn test_generate_server_address_uses_configured_address_and_port() {
 
 // ── Integration ──────────────────────────────────────────────────
 
-#[derive(Clone, Debug)]
-struct TestRow;
-impl DataRow<TestVal> for TestRow {
-    fn get(&self, _: &str) -> TestVal {
-        TestVal::new()
-    }
-}
-
 #[tokio::test]
 async fn test_start_server_wires_all_services() {
-    let data_store = TestDataStore::new(Vec::<TestRow>::new());
+    let data_store = TestDataStore::new(vec![]);
     let result = timeout(Duration::from_millis(100), start_server(data_store)).await;
 
     // The server runs indefinitely — a timeout means it started successfully.

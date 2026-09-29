@@ -4,13 +4,15 @@
 //! Encapsulates the logic for connecting to the database so consuming services are unaware of
 //! the specifics of the database implementation.
 
+use std::net::{IpAddr, Ipv6Addr, SocketAddr};
+
 use proto::services::{
     alarm_groups::alarm_group_service_server::AlarmGroupServiceServer,
     alarm_timers::alarm_timer_service_server::AlarmTimerServiceServer,
     alarm_user_layouts::user_layouts_service_server::UserLayoutsServiceServer,
 };
 use rust_db_lib::{
-    DataRow, DataStore, DataVal,
+    DataStore,
     postgres::{PostgresConfig, PostgresDataStore},
 };
 use rust_env_var_lib::env_var;
@@ -18,7 +20,6 @@ use services::{
     alarm_groups::AlarmGroupsServiceImpl, alarm_timers::AlarmTimersServiceImpl,
     user_layouts::UserLayoutsServiceImpl,
 };
-use std::net::{IpAddr, Ipv6Addr, SocketAddr};
 use tonic::transport::Server;
 use tracing::info;
 
@@ -57,9 +58,7 @@ fn generate_server_address() -> SocketAddr {
     addr
 }
 
-async fn start_server<T: DataVal, U: DataRow<T>, V: DataStore<T, U>>(
-    data_store: V,
-) -> Result<(), Box<dyn std::error::Error>> {
+async fn start_server<S: DataStore>(data_store: S) -> Result<(), Box<dyn std::error::Error>> {
     let alarm_group_service =
         AlarmGroupServiceServer::new(AlarmGroupsServiceImpl::new(data_store.clone()));
     let alarm_timer_service =
@@ -68,13 +67,13 @@ async fn start_server<T: DataVal, U: DataRow<T>, V: DataStore<T, U>>(
         UserLayoutsServiceServer::new(UserLayoutsServiceImpl::new(data_store));
     let (health_reporter, health_service) = tonic_health::server::health_reporter();
     health_reporter
-        .set_serving::<AlarmGroupServiceServer<V>>()
+        .set_serving::<AlarmGroupServiceServer<S>>()
         .await;
     health_reporter
-        .set_serving::<AlarmTimerServiceServer<V>>()
+        .set_serving::<AlarmTimerServiceServer<S>>()
         .await;
     health_reporter
-        .set_serving::<UserLayoutsServiceServer<V>>()
+        .set_serving::<UserLayoutsServiceServer<S>>()
         .await;
     let result = Server::builder()
         .add_service(alarm_group_service)
@@ -84,13 +83,13 @@ async fn start_server<T: DataVal, U: DataRow<T>, V: DataStore<T, U>>(
         .serve(generate_server_address())
         .await;
     health_reporter
-        .set_not_serving::<AlarmGroupServiceServer<V>>()
+        .set_not_serving::<AlarmGroupServiceServer<S>>()
         .await;
     health_reporter
-        .set_not_serving::<AlarmTimerServiceServer<V>>()
+        .set_not_serving::<AlarmTimerServiceServer<S>>()
         .await;
     health_reporter
-        .set_not_serving::<UserLayoutsServiceServer<V>>()
+        .set_not_serving::<UserLayoutsServiceServer<S>>()
         .await;
     Ok(result?)
 }
