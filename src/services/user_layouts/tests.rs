@@ -1,50 +1,23 @@
 //! User Layouts Module Tests
 
-use rust_db_lib::testing_utils::{TestDataStore, TestRow, TestVal};
+use rust_db_lib::testing_utils::{Operation, test_data_store};
 
 use super::*;
 use crate::proto::google::protobuf::Empty;
 
 #[tokio::test]
 async fn test_get_user_layouts() {
-    let service = UserLayoutsServiceImpl {
-        data_store: TestDataStore::new(vec![
-            TestRow::new(HashMap::from([
-                (
-                    "group_name".into(),
-                    TestVal {
-                        test_string: Some("List1".into()),
-                        ..Default::default()
-                    },
-                ),
-                (
-                    "user_name".into(),
-                    TestVal {
-                        test_string: Some("User1".into()),
-                        ..Default::default()
-                    },
-                ),
-            ])),
-            TestRow::new(HashMap::from([
-                (
-                    "group_name".into(),
-                    TestVal {
-                        test_string: Some("List2".into()),
-                        ..Default::default()
-                    },
-                ),
-                (
-                    "user_name".into(),
-                    TestVal {
-                        test_string: Some("User2".into()),
-                        ..Default::default()
-                    },
-                ),
-            ])),
-        ]),
-    };
+    let data_store = test_data_store!([
+        [("group_name", "List1"), ("user_name", "User1")],
+        [("group_name", "List2"), ("user_name", "User2")]
+    ]);
+    let service = UserLayoutsServiceImpl::new(data_store.clone());
     let result = service.get_user_layouts(Request::new(Empty {})).await;
     assert!(result.is_ok());
+    assert_eq!(
+        data_store.captured_operations(),
+        vec![Operation::Query(GET_ALL_LAYOUTS_QUERY.into())]
+    );
     let response = result
         .expect("get_user_layouts should succeed")
         .into_inner();
