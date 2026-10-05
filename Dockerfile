@@ -1,4 +1,4 @@
-FROM adregistry.fnal.gov/dev-containers/redhat-ubi9-minimal@9.8-1790754119
+FROM adregistry.fnal.gov/dev-containers/redhat-ubi9-minimal:9.8-1790754119
 
 RUN useradd -u 10001 -r -M -s /sbin/nologin appuser
 
