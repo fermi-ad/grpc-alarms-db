@@ -2,12 +2,6 @@
 //!
 //! Interacts with the database to store and retrieve data related to alarm timers (snooze and bypass reminders).
 
-use crate::proto::google::protobuf::{Empty, Timestamp};
-use crate::proto::services::alarm_timers::{
-    AlarmTimer, AlarmTimers, DeleteRequest, ReadRequest, TimerType,
-    alarm_timer_service_server::AlarmTimerService,
-};
-use crate::utils;
 use chrono::{DateTime, Utc};
 use queries::{
     CREATE_TIMER_QUERY, DELETE_TIMER_QUERY, READ_SNOOZE_TIMERS, READ_USER_BYPASS_REMINDERS_QUERY,
@@ -16,9 +10,15 @@ use queries::{
 use rust_db_lib::{
     DataRow, DataStore, DataStoreError, DataVal, ParameterizedQuery, QueryParameter,
 };
-use std::marker::PhantomData;
 use tonic::{Request, Response, Status};
 use tracing::{error, info};
+
+use crate::proto::google::protobuf::{Empty, Timestamp};
+use crate::proto::services::alarm_timers::{
+    AlarmTimer, AlarmTimers, DeleteRequest, ReadRequest, TimerType,
+    alarm_timer_service_server::AlarmTimerService,
+};
+use crate::utils;
 
 mod queries;
 
@@ -26,18 +26,12 @@ mod queries;
 mod tests;
 
 /// A service wrapping a [`DataStore`] to provide alarm timer information, and implementing the Protobuf-defined gRPC service.
-pub struct AlarmTimersServiceImpl<T: DataVal, U: DataRow<T>, V: DataStore<T, U>> {
-    data_store: V,
-    _row_type: PhantomData<U>,
-    _val_type: PhantomData<T>,
+pub struct AlarmTimersServiceImpl<S: DataStore> {
+    data_store: S,
 }
-impl<T: DataVal, U: DataRow<T>, V: DataStore<T, U>> AlarmTimersServiceImpl<T, U, V> {
-    pub fn new(data_store: V) -> Self {
-        Self {
-            data_store,
-            _row_type: PhantomData,
-            _val_type: PhantomData,
-        }
+impl<S: DataStore> AlarmTimersServiceImpl<S> {
+    pub fn new(data_store: S) -> Self {
+        Self { data_store }
     }
 
     async fn create_impl(&self, timer: ValidTimerInput) -> Result<(), DataStoreError> {
@@ -118,9 +112,7 @@ impl<T: DataVal, U: DataRow<T>, V: DataStore<T, U>> AlarmTimersServiceImpl<T, U,
 }
 
 #[tonic::async_trait]
-impl<T: DataVal, U: DataRow<T>, V: DataStore<T, U>> AlarmTimerService
-    for AlarmTimersServiceImpl<T, U, V>
-{
+impl<S: DataStore> AlarmTimerService for AlarmTimersServiceImpl<S> {
     async fn create(&self, request: Request<AlarmTimer>) -> Result<Response<Empty>, Status> {
         let timer_input = request.into_inner();
         let timer = validate_timer_input(timer_input)?;
@@ -218,9 +210,7 @@ struct ValidTimerInput {
     updated_by: String,
 }
 
-fn rows_to_timers<T: DataVal, U: DataRow<T>>(
-    rows: Vec<U>,
-) -> Result<Vec<AlarmTimer>, DataStoreError> {
+fn rows_to_timers<R: DataRow>(rows: Vec<R>) -> Result<Vec<AlarmTimer>, DataStoreError> {
     rows.iter()
         .map(|row| {
             let device = row.get("device").to_string()?;

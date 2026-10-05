@@ -1,103 +1,49 @@
 //! Alarm Groups Module Tests
 
+use chrono::{TimeZone, Utc};
+use rust_db_lib::testing_utils::{Operation, test_data_store};
+
 use crate::proto::google::protobuf::{Empty, Timestamp};
 
 use super::*;
-use chrono::{DateTime, TimeZone, Utc};
-use rust_db_lib::testing_utils::{TestDataStore, TestVal};
-use std::vec;
-
-#[derive(Clone)]
-struct TestRow {
-    group_name: String,
-    description: String,
-    updated_at: DateTime<Utc>,
-    updated_by: String,
-    group_is_user_category: bool,
-    member_name: String,
-    member_is_group: bool,
-}
-impl DataRow<TestVal> for TestRow {
-    fn get(&self, column_name: &str) -> TestVal {
-        match column_name {
-            "description" => {
-                let mut val = TestVal::new();
-                val.test_string = Some(self.description.clone());
-                val
-            }
-            "group_is_user_category" => {
-                let mut val = TestVal::new();
-                val.test_bool = Some(self.group_is_user_category);
-                val
-            }
-            "group_name" => {
-                let mut val = TestVal::new();
-                val.test_string = Some(self.group_name.clone());
-                val
-            }
-            "member_is_group" => {
-                let mut val = TestVal::new();
-                val.test_bool = Some(self.member_is_group);
-                val
-            }
-            "member_name" => {
-                let mut val = TestVal::new();
-                val.test_string = Some(self.member_name.clone());
-                val
-            }
-            "updated_at" => {
-                let mut val = TestVal::new();
-                val.test_datetime = Some(self.updated_at);
-                val
-            }
-            "updated_by" => {
-                let mut val = TestVal::new();
-                val.test_string = Some(self.updated_by.clone());
-                val
-            }
-            _ => TestVal::new(),
-        }
-    }
-}
-
-fn row1() -> TestRow {
-    TestRow {
-        group_name: "Group1".to_string(),
-        description: "Description 1".to_string(),
-        updated_at: Utc
-            .with_ymd_and_hms(2024, 1, 1, 0, 0, 0)
-            .single()
-            .expect("Date could not be calculated"),
-        updated_by: "User1".to_string(),
-        group_is_user_category: false,
-        member_name: "G:AMANDA1".to_string(),
-        member_is_group: true,
-    }
-}
-fn row2() -> TestRow {
-    TestRow {
-        group_name: "Group2".to_string(),
-        description: "Description 2".to_string(),
-        updated_at: Utc
-            .with_ymd_and_hms(2024, 1, 2, 0, 0, 0)
-            .single()
-            .expect("Date could not be calculated"),
-        updated_by: "User2".to_string(),
-        group_is_user_category: true,
-        member_name: "G:AMANDA2".to_string(),
-        member_is_group: false,
-    }
-}
 
 #[tokio::test]
 async fn test_get_group_metadata() {
-    let service = AlarmGroupsServiceImpl {
-        data_store: TestDataStore::new(vec![row1(), row2()]),
-        _row_type: PhantomData,
-        _val_type: PhantomData,
-    };
+    let time1 = Utc
+        .with_ymd_and_hms(2024, 1, 1, 0, 0, 0)
+        .single()
+        .expect("Date could not be calculated");
+    let time2 = Utc
+        .with_ymd_and_hms(2024, 1, 2, 0, 0, 0)
+        .single()
+        .expect("Date could not be calculated");
+    let data_store = test_data_store!([
+        [
+            ("group_name", "Group1"),
+            ("description", "Description 1"),
+            ("updated_at", time1),
+            ("updated_by", "User1"),
+            ("group_is_user_category", false),
+            ("member_name", "G:AMANDA1"),
+            ("member_is_group", true)
+        ],
+        [
+            ("group_name", "Group2"),
+            ("description", "Description 2"),
+            ("updated_at", time2),
+            ("updated_by", "User2"),
+            ("group_is_user_category", true),
+            ("member_name", "G:AMANDA2"),
+            ("member_is_group", false)
+        ]
+    ]);
+    let service = AlarmGroupsServiceImpl::new(data_store.clone());
     let result = service.get_group_metadata(Request::new(Empty {})).await;
     assert!(result.is_ok());
+    assert_eq!(
+        data_store.captured_operations(),
+        vec![Operation::Query(ALL_GROUPS_METADATA_QUERY.into())]
+    );
     let response = result
         .expect("get_group_metadata should succeed")
         .into_inner();
@@ -131,17 +77,33 @@ async fn test_get_group_metadata() {
 
 #[tokio::test]
 async fn test_get_groups() {
-    let service = AlarmGroupsServiceImpl {
-        data_store: TestDataStore::new(vec![row2()]),
-        _row_type: PhantomData,
-        _val_type: PhantomData,
-    };
+    let time = Utc
+        .with_ymd_and_hms(2024, 1, 2, 0, 0, 0)
+        .single()
+        .expect("Date could not be calculated");
+    let data_store = test_data_store!([[
+        ("group_name", "Group2"),
+        ("description", "Description 2"),
+        ("updated_at", time),
+        ("updated_by", "User2"),
+        ("group_is_user_category", true),
+        ("member_name", "G:AMANDA2"),
+        ("member_is_group", false)
+    ]]);
+    let service = AlarmGroupsServiceImpl::new(data_store.clone());
     let result = service
         .get_groups(Request::new(GroupsRequest {
             groups: vec!["Group2".to_string()],
         }))
         .await;
     assert!(result.is_ok());
+    let mut expected_query =
+        ParameterizedQuery::new(GROUP_DETAILS_QUERY.replace("{group_name_placeholders}", "$1"));
+    expected_query.bind(QueryParameter::Str("Group2".to_string()));
+    assert_eq!(
+        data_store.captured_operations(),
+        vec![Operation::ParameterizedQuery(expected_query)]
+    );
     let response = result.expect("get_groups should succeed").into_inner();
     assert_eq!(response.alarm_groups.len(), 1);
     let value = response
@@ -154,10 +116,6 @@ async fn test_get_groups() {
         .expect("alarm group should have metadata");
     assert_eq!(metadata.name, "Group2");
     assert_eq!(metadata.description, "Description 2");
-    let time = Utc
-        .with_ymd_and_hms(2024, 1, 2, 0, 0, 0)
-        .single()
-        .expect("Date could not be calculated");
     assert_eq!(
         metadata.updated_at,
         Some(Timestamp {
@@ -172,16 +130,41 @@ async fn test_get_groups() {
 }
 
 #[tokio::test]
+async fn test_get_groups_multiple_names() {
+    let data_store = test_data_store!([]);
+    let service = AlarmGroupsServiceImpl::new(data_store.clone());
+    let result = service
+        .get_groups(Request::new(GroupsRequest {
+            groups: vec!["Group1".to_string(), "Group2".to_string()],
+        }))
+        .await;
+    assert!(result.is_ok());
+    assert!(
+        result
+            .expect("get_groups should succeed")
+            .into_inner()
+            .alarm_groups
+            .is_empty()
+    );
+
+    let mut expected_query =
+        ParameterizedQuery::new(GROUP_DETAILS_QUERY.replace("{group_name_placeholders}", "$1, $2"));
+    expected_query.bind(QueryParameter::Str("Group1".to_string()));
+    expected_query.bind(QueryParameter::Str("Group2".to_string()));
+    assert_eq!(
+        data_store.captured_operations(),
+        vec![Operation::ParameterizedQuery(expected_query)]
+    );
+}
+
+#[tokio::test]
 async fn test_get_groups_empty_request() {
-    let data: Vec<TestRow> = vec![];
-    let service = AlarmGroupsServiceImpl {
-        data_store: TestDataStore::new(data),
-        _row_type: PhantomData,
-        _val_type: PhantomData,
-    };
+    let data_store = test_data_store!([]);
+    let service = AlarmGroupsServiceImpl::new(data_store.clone());
     let result = service
         .get_groups(Request::new(GroupsRequest { groups: vec![] }))
         .await;
     assert!(result.is_err());
     assert_eq!(result.unwrap_err().code(), tonic::Code::InvalidArgument);
+    assert!(data_store.captured_operations().is_empty());
 }

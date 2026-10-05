@@ -130,7 +130,7 @@ The following variables must be set for the service to run:
 | `DATABASE_USER` | ✅ | PostgreSQL username |
 | `DATABASE_PASS` | ✅ | Password for the PostgreSQL user |
 | `DATABASE_NAME` | ✅ | Name of the target database |
-| `ALARM_GRPC_SERVER_PORT` | ✅ | Port the gRPC server listens on (see [`Dockerfile`](Dockerfile) for the default) |
+| `ALARM_GRPC_SERVER_PORT` | ✅ | Port the gRPC server listens on |
 | `RUST_LOG` | ❌ | Controls log verbosity (e.g. `info`, `debug`, `grpc_alarms_db=trace`). See [tracing-subscriber docs](https://docs.rs/tracing-subscriber/latest/tracing_subscriber/filter/struct.EnvFilter.html) |
 
 ---
@@ -184,81 +184,11 @@ cargo run
 
 Each service module has a dedicated test file using an in-memory `TestDataStore` from `rust-db-lib`'s `testing-utils` feature. This allows full unit testing of service logic without a live database connection.
 
-| Test file | Coverage |
-|---|---|
-| [`src/services/alarm_groups/tests.rs`](src/services/alarm_groups/tests.rs) | Group metadata retrieval, group detail queries, sorting |
-| [`src/services/alarm_timers/tests.rs`](src/services/alarm_timers/tests.rs) | Timer CRUD, input validation, timer type routing |
-| [`src/services/user_layouts/tests.rs`](src/services/user_layouts/tests.rs) | Layout retrieval and per-user grouping |
-| [`src/logging/tests.rs`](src/logging/tests.rs) | Logging setup |
-| [`src/tests.rs`](src/tests.rs) | Top-level integration tests |
-
 Run all tests with:
 
 ```bash
 cargo test
 ```
-
----
-
-## Project Structure
-
-```
-grpc-alarms-db/
-├── .github/
-│   ├── dependabot.yml                # Automated dependency update schedule (Cargo, Actions, devcontainer)
-│   └── workflows/
-│       ├── integration.yaml          # CI: runs tests and coverage on push/PR to main
-│       └── deployment.yaml           # CD: builds image and deploys on push to main
-├── build.rs                          # Build script: compiles .proto files via rust-grpc-lib
-├── Cargo.toml                        # Package manifest and dependency declarations
-├── Dockerfile                        # Container image definition (built and pushed by CD pipeline)
-├── resources/
-│   └── sql/
-│       ├── app_schema.sql            # PostgreSQL schema DDL for the alarmsapp schema
-│       └── data_cutover.sql          # Data migration script
-└── src/
-    ├── main.rs                       # Entry point: wires up DB config, services, and gRPC server
-    ├── proto.rs                      # Includes generated Protobuf/gRPC Rust code (from OUT_DIR)
-    ├── utils.rs                      # Shared utilities (e.g. DateTime → Protobuf Timestamp)
-    ├── tests.rs                      # Top-level integration tests
-    ├── logging/
-    │   ├── mod.rs                    # Logging setup using tracing + tracing-subscriber
-    │   └── tests.rs
-    └── services/
-        ├── mod.rs                    # Re-exports all service modules
-        ├── alarm_groups/
-        │   ├── mod.rs                # AlarmGroupService gRPC implementation
-        │   ├── queries.rs            # SQL queries for alarm groups
-        │   └── tests.rs
-        ├── alarm_timers/
-        │   ├── mod.rs                # AlarmTimerService gRPC implementation + input validation
-        │   ├── queries.rs            # SQL queries for alarm timers
-        │   └── tests.rs
-        └── user_layouts/
-            ├── mod.rs                # UserLayoutsService gRPC implementation
-            ├── queries.rs            # SQL queries for user layouts
-            └── tests.rs
-```
-
----
-
-## Dependencies
-
-[`Cargo.toml`](Cargo.toml) is the authoritative source for all dependencies and their pinned versions. The table below describes the role of each dependency for orientation.
-
-| Crate | Purpose |
-|---|---|
-| [`tonic`](https://crates.io/crates/tonic) | gRPC server framework for Rust |
-| [`tonic-health`](https://crates.io/crates/tonic-health) | gRPC health-check protocol implementation |
-| [`prost`](https://crates.io/crates/prost) | Protobuf encoding/decoding |
-| [`tokio`](https://crates.io/crates/tokio) | Async runtime (multi-thread) |
-| [`chrono`](https://crates.io/crates/chrono) | Date/time handling |
-| [`tracing`](https://crates.io/crates/tracing) + [`tracing-subscriber`](https://crates.io/crates/tracing-subscriber) | Structured logging |
-| `rust-db-lib` (internal) | Abstract `DataStore` trait + `PostgresDataStore` implementation |
-| `rust-env-var-lib` (internal) | Typed environment variable loading |
-| `rust-grpc-lib` (internal) | Proto compilation build support |
-
-Dependency updates are automated via [Dependabot](.github/dependabot.yml). See that file for current update schedules and grouping rules.
 
 ---
 

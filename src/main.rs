@@ -4,13 +4,19 @@
 //! Encapsulates the logic for connecting to the database so consuming services are unaware of
 //! the specifics of the database implementation.
 
+use std::{
+    env::{self, VarError},
+    error::Error,
+    net::{IpAddr, Ipv6Addr, SocketAddr},
+};
+
 use proto::services::{
     alarm_groups::alarm_group_service_server::AlarmGroupServiceServer,
     alarm_timers::alarm_timer_service_server::AlarmTimerServiceServer,
     alarm_user_layouts::user_layouts_service_server::UserLayoutsServiceServer,
 };
 use rust_db_lib::{
-    DataRow, DataStore, DataVal,
+    DataStore,
     postgres::{PostgresConfig, PostgresDataStore},
 };
 use rust_env_var_lib::env_var;
@@ -18,7 +24,6 @@ use services::{
     alarm_groups::AlarmGroupsServiceImpl, alarm_timers::AlarmTimersServiceImpl,
     user_layouts::UserLayoutsServiceImpl,
 };
-use std::net::{IpAddr, Ipv6Addr, SocketAddr};
 use tonic::transport::Server;
 use tracing::info;
 
@@ -31,35 +36,37 @@ mod utils;
 mod tests;
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    logging::setup_logging();
+async fn main() -> Result<(), Box<dyn Error>> {
+    logging::setup_logging()?;
 
-    let config = build_db_config();
+    let config = build_db_config()?;
     let data_store = PostgresDataStore::new(config).await?;
     start_server(data_store).await
 }
 
-fn build_db_config() -> PostgresConfig {
-    PostgresConfig {
-        host: env_var::expect("DATABASE_HOST"),
-        port: env_var::expect("DATABASE_PORT"),
-        username: env_var::expect("DATABASE_USER"),
-        password: env_var::expect("DATABASE_PASS"),
-        db_name: env_var::expect("DATABASE_NAME"),
+fn build_db_config() -> Result<PostgresConfig, Box<dyn Error>> {
+    Ok(PostgresConfig {
+        host: env::var("DATABASE_HOST")?,
+        port: env_var::get("DATABASE_PORT")
+            .to_option()
+            .ok_or(VarError::NotPresent)?,
+        username: env::var("DATABASE_USER")?,
+        password: env::var("DATABASE_PASS")?,
+        db_name: env::var("DATABASE_NAME")?,
         ..Default::default()
-    }
+    })
 }
 
-fn generate_server_address() -> SocketAddr {
-    let port = env_var::expect("ALARM_GRPC_SERVER_PORT");
+fn generate_server_address() -> Result<SocketAddr, Box<dyn Error>> {
+    let port = env_var::get("ALARM_GRPC_SERVER_PORT")
+        .to_option()
+        .ok_or(VarError::NotPresent)?;
     let addr = SocketAddr::new(IpAddr::V6(Ipv6Addr::UNSPECIFIED), port);
     info!("***** Alarm gRPC Server is running at: {addr} *******");
-    addr
+    Ok(addr)
 }
 
-async fn start_server<T: DataVal, U: DataRow<T>, V: DataStore<T, U>>(
-    data_store: V,
-) -> Result<(), Box<dyn std::error::Error>> {
+async fn start_server<S: DataStore>(data_store: S) -> Result<(), Box<dyn Error>> {
     let alarm_group_service =
         AlarmGroupServiceServer::new(AlarmGroupsServiceImpl::new(data_store.clone()));
     let alarm_timer_service =
@@ -68,29 +75,29 @@ async fn start_server<T: DataVal, U: DataRow<T>, V: DataStore<T, U>>(
         UserLayoutsServiceServer::new(UserLayoutsServiceImpl::new(data_store));
     let (health_reporter, health_service) = tonic_health::server::health_reporter();
     health_reporter
-        .set_serving::<AlarmGroupServiceServer<V>>()
+        .set_serving::<AlarmGroupServiceServer<S>>()
         .await;
     health_reporter
-        .set_serving::<AlarmTimerServiceServer<V>>()
+        .set_serving::<AlarmTimerServiceServer<S>>()
         .await;
     health_reporter
-        .set_serving::<UserLayoutsServiceServer<V>>()
+        .set_serving::<UserLayoutsServiceServer<S>>()
         .await;
     let result = Server::builder()
         .add_service(alarm_group_service)
         .add_service(alarm_timer_service)
         .add_service(health_service)
         .add_service(user_layouts_service)
-        .serve(generate_server_address())
+        .serve(generate_server_address()?)
         .await;
     health_reporter
-        .set_not_serving::<AlarmGroupServiceServer<V>>()
+        .set_not_serving::<AlarmGroupServiceServer<S>>()
         .await;
     health_reporter
-        .set_not_serving::<AlarmTimerServiceServer<V>>()
+        .set_not_serving::<AlarmTimerServiceServer<S>>()
         .await;
     health_reporter
-        .set_not_serving::<UserLayoutsServiceServer<V>>()
+        .set_not_serving::<UserLayoutsServiceServer<S>>()
         .await;
     Ok(result?)
 }

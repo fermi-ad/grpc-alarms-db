@@ -1,51 +1,23 @@
 //! User Layouts Module Tests
 
-use crate::proto::google::protobuf::Empty;
+use rust_db_lib::testing_utils::{Operation, test_data_store};
 
 use super::*;
-use rust_db_lib::testing_utils::{TestDataStore, TestVal};
-
-#[derive(Clone, Debug)]
-struct TestRow {
-    user_name: String,
-    group_name: String,
-}
-impl DataRow<TestVal> for TestRow {
-    fn get(&self, column_name: &str) -> TestVal {
-        match column_name {
-            "user_name" => {
-                let mut result = TestVal::new();
-                result.test_string = Some(self.user_name.clone());
-                result
-            }
-            "group_name" => {
-                let mut result = TestVal::new();
-                result.test_string = Some(self.group_name.clone());
-                result
-            }
-            _ => TestVal::new(),
-        }
-    }
-}
+use crate::proto::google::protobuf::Empty;
 
 #[tokio::test]
 async fn test_get_user_layouts() {
-    let service = UserLayoutsServiceImpl {
-        data_store: TestDataStore::new(vec![
-            TestRow {
-                group_name: "List1".to_string(),
-                user_name: "User1".to_string(),
-            },
-            TestRow {
-                group_name: "List2".to_string(),
-                user_name: "User2".to_string(),
-            },
-        ]),
-        _row_type: PhantomData,
-        _val_type: PhantomData,
-    };
+    let data_store = test_data_store!([
+        [("group_name", "List1"), ("user_name", "User1")],
+        [("group_name", "List2"), ("user_name", "User2")]
+    ]);
+    let service = UserLayoutsServiceImpl::new(data_store.clone());
     let result = service.get_user_layouts(Request::new(Empty {})).await;
     assert!(result.is_ok());
+    assert_eq!(
+        data_store.captured_operations(),
+        vec![Operation::Query(GET_ALL_LAYOUTS_QUERY.into())]
+    );
     let response = result
         .expect("get_user_layouts should succeed")
         .into_inner();

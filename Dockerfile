@@ -1,9 +1,8 @@
-FROM adregistry.fnal.gov/dev-containers/redhat-ubi9-minimal@sha256:ec08129f809d3a00e60e040fef825da752872b561e3a20250f3232209907e130
+FROM adregistry.fnal.gov/dev-containers/redhat-ubi9-minimal@9.8-1790754119
 
-COPY target/release/grpc-alarms-db /usr/local/bin/grpc-alarms-db
+RUN useradd -u 10001 -r -M -s /sbin/nologin appuser
 
-ENV ALARM_GRPC_SERVER_PORT=7055
-EXPOSE 7055
+COPY --chown=10001:10001 target/release/grpc-alarms-db /usr/local/bin/grpc-alarms-db
 
 USER 10001
 

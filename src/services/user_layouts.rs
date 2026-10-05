@@ -2,17 +2,19 @@
 //!
 //! Contains logic for retrieval and storage of user alarm layout settings.
 
+use std::collections::HashMap;
+
+use queries::GET_ALL_LAYOUTS_QUERY;
+use rust_db_lib::{DataRow, DataStore, DataStoreError, DataVal};
+use tonic::{Request, Response, Status};
+use tracing::{error, info};
+
 use crate::proto::{
     google::protobuf::Empty,
     services::alarm_user_layouts::{
         UserLayout, UserLayouts, user_layouts_service_server::UserLayoutsService,
     },
 };
-use queries::GET_ALL_LAYOUTS_QUERY;
-use rust_db_lib::{DataRow, DataStore, DataStoreError, DataVal};
-use std::{collections::HashMap, marker::PhantomData};
-use tonic::{Request, Response, Status};
-use tracing::{error, info};
 
 mod queries;
 
@@ -20,19 +22,13 @@ mod queries;
 mod tests;
 
 /// A service wrapping a [`DataStore`] to provide alarm list layout information, and implementing the Protobuf-defined gRPC service.
-pub struct UserLayoutsServiceImpl<T: DataVal, U: DataRow<T>, V: DataStore<T, U>> {
-    data_store: V,
-    _row_type: PhantomData<U>,
-    _val_type: PhantomData<T>,
+pub struct UserLayoutsServiceImpl<S: DataStore> {
+    data_store: S,
 }
 
-impl<T: DataVal, U: DataRow<T>, V: DataStore<T, U>> UserLayoutsServiceImpl<T, U, V> {
-    pub fn new(data_store: V) -> Self {
-        Self {
-            data_store,
-            _row_type: PhantomData,
-            _val_type: PhantomData,
-        }
+impl<S: DataStore> UserLayoutsServiceImpl<S> {
+    pub fn new(data_store: S) -> Self {
+        Self { data_store }
     }
 
     /// Retrieves all top-level groups for each user. Used when generating the alarm screen display.
@@ -60,9 +56,7 @@ impl<T: DataVal, U: DataRow<T>, V: DataStore<T, U>> UserLayoutsServiceImpl<T, U,
 }
 
 #[tonic::async_trait]
-impl<T: DataVal, U: DataRow<T>, V: DataStore<T, U>> UserLayoutsService
-    for UserLayoutsServiceImpl<T, U, V>
-{
+impl<S: DataStore> UserLayoutsService for UserLayoutsServiceImpl<S> {
     /// Translates query results from the DataStore into gRPC `UserLayouts` messages.
     async fn get_user_layouts(&self, _: Request<Empty>) -> Result<Response<UserLayouts>, Status> {
         self.get_layouts()

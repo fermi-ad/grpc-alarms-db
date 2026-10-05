@@ -2,19 +2,21 @@
 //!
 //! Contains logic for retrieving and updating alarm groups.
 //!
+use std::collections::HashMap;
+
+use queries::{ALL_GROUPS_METADATA_QUERY, GROUP_DETAILS_QUERY};
+use rust_db_lib::{
+    DataRow, DataStore, DataStoreError, DataVal, ParameterizedQuery, QueryParameter,
+};
+use tonic::{Request, Response, Status};
+use tracing::{error, info};
+
 use crate::proto::google::protobuf::Empty;
 use crate::proto::services::alarm_groups::{
     AlarmGroup, AlarmGroupMetadata, AlarmGroupMetadatum, AlarmGroups, GroupsRequest,
     alarm_group_service_server::AlarmGroupService,
 };
 use crate::utils;
-use queries::{ALL_GROUPS_METADATA_QUERY, GROUP_DETAILS_QUERY};
-use rust_db_lib::{
-    DataRow, DataStore, DataStoreError, DataVal, ParameterizedQuery, QueryParameter,
-};
-use std::{collections::HashMap, marker::PhantomData};
-use tonic::{Request, Response, Status};
-use tracing::{error, info};
 
 mod queries;
 
@@ -22,18 +24,12 @@ mod queries;
 mod tests;
 
 /// A service wrapping a [`DataStore`] to provide alarm group information, and implementing the Protobuf-defined gRPC service.
-pub struct AlarmGroupsServiceImpl<T: DataVal, U: DataRow<T>, V: DataStore<T, U>> {
-    data_store: V,
-    _row_type: PhantomData<U>,
-    _val_type: PhantomData<T>,
+pub struct AlarmGroupsServiceImpl<S: DataStore> {
+    data_store: S,
 }
-impl<T: DataVal, U: DataRow<T>, V: DataStore<T, U>> AlarmGroupsServiceImpl<T, U, V> {
-    pub fn new(data_store: V) -> Self {
-        Self {
-            data_store,
-            _row_type: PhantomData,
-            _val_type: PhantomData,
-        }
+impl<S: DataStore> AlarmGroupsServiceImpl<S> {
+    pub fn new(data_store: S) -> Self {
+        Self { data_store }
     }
 
     /// Retrieves all alarm group metadata.
@@ -45,7 +41,7 @@ impl<T: DataVal, U: DataRow<T>, V: DataStore<T, U>> AlarmGroupsServiceImpl<T, U,
             .await?;
         query_result
             .iter()
-            .map(|row| create_metadatum(row, row.get("group_name").to_string()?))
+            .map(create_metadatum)
             .collect::<Result<Vec<_>, DataStoreError>>()
     }
 
@@ -77,9 +73,7 @@ impl<T: DataVal, U: DataRow<T>, V: DataStore<T, U>> AlarmGroupsServiceImpl<T, U,
 }
 
 #[tonic::async_trait]
-impl<T: DataVal, U: DataRow<T>, V: DataStore<T, U>> AlarmGroupService
-    for AlarmGroupsServiceImpl<T, U, V>
-{
+impl<S: DataStore> AlarmGroupService for AlarmGroupsServiceImpl<S> {
     /// Retrieves [`AlarmGroupMetadata`] for all alarm groups.
     async fn get_group_metadata(
         &self,
@@ -117,33 +111,24 @@ impl<T: DataVal, U: DataRow<T>, V: DataStore<T, U>> AlarmGroupService
     }
 }
 
-fn create_metadatum<T: DataVal, U: DataRow<T>>(
-    row: &U,
-    name: String,
-) -> Result<AlarmGroupMetadatum, DataStoreError> {
-    let description = row.get("description").to_string()?;
-    let updated_at = utils::datetime_to_timestamp(row.get("updated_at").to_datetime()?);
-    let updated_by = row.get("updated_by").to_string()?;
-    let is_user_category = row.get("group_is_user_category").to_bool()?;
+fn create_metadatum<R: DataRow>(row: &R) -> Result<AlarmGroupMetadatum, DataStoreError> {
     Ok(AlarmGroupMetadatum {
-        name,
-        description,
-        updated_at,
-        updated_by,
-        is_user_category,
+        name: row.get("group_name").to_string()?,
+        description: row.get("description").to_string()?,
+        updated_at: utils::datetime_to_timestamp(row.get("updated_at").to_datetime()?),
+        updated_by: row.get("updated_by").to_string()?,
+        is_user_category: row.get("group_is_user_category").to_bool()?,
     })
 }
 
-fn rows_to_groups<T: DataVal, U: DataRow<T>>(
-    rows: Vec<U>,
-) -> Result<Vec<AlarmGroup>, DataStoreError> {
+fn rows_to_groups<R: DataRow>(rows: Vec<R>) -> Result<Vec<AlarmGroup>, DataStoreError> {
     let mut group_builder = HashMap::new();
     for row in &rows {
         let group_name = row.get("group_name").to_string()?;
         let alarm_group = group_builder
-            .entry(group_name.clone())
+            .entry(group_name)
             .or_insert_with(|| AlarmGroup {
-                metadata: create_metadatum(row, group_name).ok(),
+                metadata: create_metadatum(row).ok(),
                 devices: Vec::new(),
                 groups: Vec::new(),
             });

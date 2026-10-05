@@ -1,5 +1,10 @@
 [env]
 ALARM_GRPC_SERVER_PORT = "7055"
+DATABASE_HOST = "db.example.com"
+DATABASE_PORT = "5432"
+DATABASE_USER = "alice"
+DATABASE_PASS = "s3cr3t"
+DATABASE_NAME = "alarmsdb"
 
 [net]
 git-fetch-with-cli = true

@@ -1,44 +1,19 @@
 //! Alarm Timers Module Tests
 
-use super::*;
-use rust_db_lib::testing_utils::{TestDataStore, TestVal};
+use rust_db_lib::testing_utils::test_data_store;
 
-#[derive(Clone)]
-struct TestRow {
-    device: String,
-    end_time: DateTime<Utc>,
-    timer_type: String,
-    updated_at: DateTime<Utc>,
-    updated_by: String,
-}
-impl DataRow<TestVal> for TestRow {
-    fn get(&self, col: &str) -> TestVal {
-        let mut val = TestVal::new();
-        match col {
-            "device" => val.test_string = Some(self.device.clone()),
-            "end_time" => val.test_datetime = Some(self.end_time),
-            "timer_type" => val.test_string = Some(self.timer_type.clone()),
-            "updated_at" => val.test_datetime = Some(self.updated_at),
-            "updated_by" => val.test_string = Some(self.updated_by.clone()),
-            _ => (),
-        };
-        val
-    }
-}
+use super::*;
 
 #[tokio::test]
 async fn test_read_bypass_reminders() {
     let test_time = Utc::now();
-    let test_row = TestRow {
-        device: "Device1".to_string(),
-        end_time: test_time,
-        timer_type: TimerType::BypassReminder.as_str_name().to_string(),
-        updated_at: test_time,
-        updated_by: "UserA".to_string(),
-    };
-    let data_store = TestDataStore {
-        data: vec![test_row.clone()],
-    };
+    let data_store = test_data_store!([[
+        ("device", "Device1"),
+        ("end_time", test_time),
+        ("timer_type", TimerType::BypassReminder.as_str_name()),
+        ("updated_at", test_time),
+        ("updated_by", "UserA")
+    ]]);
     let service = AlarmTimersServiceImpl::new(data_store);
     let result = service
         .read_bypass_reminders(ValidReadRequest {
@@ -51,32 +26,23 @@ async fn test_read_bypass_reminders() {
     let timers = result.expect("read_bypass_reminders should succeed");
     assert_eq!(timers.len(), 1);
     let timer = &timers[0];
-    assert_eq!(timer.device, test_row.device);
-    assert_eq!(
-        timer.end_time,
-        utils::datetime_to_timestamp(test_row.end_time)
-    );
+    assert_eq!(timer.device, "Device1");
+    assert_eq!(timer.end_time, utils::datetime_to_timestamp(test_time));
     assert_eq!(timer.timer_type, TimerType::BypassReminder as i32);
-    assert_eq!(
-        timer.updated_at,
-        utils::datetime_to_timestamp(test_row.updated_at)
-    );
-    assert_eq!(timer.updated_by, test_row.updated_by);
+    assert_eq!(timer.updated_at, utils::datetime_to_timestamp(test_time));
+    assert_eq!(timer.updated_by, "UserA");
 }
 
 #[tokio::test]
 async fn test_read_snooze_timers() {
     let test_time = Utc::now();
-    let test_row = TestRow {
-        device: "Device1".to_string(),
-        end_time: test_time,
-        timer_type: TimerType::Snooze.as_str_name().to_string(),
-        updated_at: test_time,
-        updated_by: "UserA".to_string(),
-    };
-    let data_store = TestDataStore {
-        data: vec![test_row.clone()],
-    };
+    let data_store = test_data_store!([[
+        ("device", "Device1"),
+        ("end_time", test_time),
+        ("timer_type", TimerType::Snooze.as_str_name()),
+        ("updated_at", test_time),
+        ("updated_by", "UserA")
+    ]]);
 
     let service = AlarmTimersServiceImpl::new(data_store);
     let result = service
@@ -95,22 +61,16 @@ async fn test_read_snooze_timers() {
     assert_eq!(timers.len(), 1);
 
     let timer = &timers[0];
-    assert_eq!(timer.device, test_row.device);
-    assert_eq!(
-        timer.end_time,
-        utils::datetime_to_timestamp(test_row.end_time)
-    );
+    assert_eq!(timer.device, "Device1");
+    assert_eq!(timer.end_time, utils::datetime_to_timestamp(test_time));
     assert_eq!(timer.timer_type, TimerType::Snooze as i32);
-    assert_eq!(
-        timer.updated_at,
-        utils::datetime_to_timestamp(test_row.updated_at)
-    );
-    assert_eq!(timer.updated_by, test_row.updated_by);
+    assert_eq!(timer.updated_at, utils::datetime_to_timestamp(test_time));
+    assert_eq!(timer.updated_by, "UserA");
 }
 
 #[tokio::test]
 async fn test_create_timer() {
-    let data_store = TestDataStore::<TestRow> { data: vec![] };
+    let data_store = test_data_store!([]);
     let service = AlarmTimersServiceImpl::new(data_store);
 
     let test_time = utils::datetime_to_timestamp(Utc::now());
@@ -129,7 +89,7 @@ async fn test_create_timer() {
 
 #[tokio::test]
 async fn test_delete_timer() {
-    let data_store = TestDataStore::<TestRow> { data: vec![] };
+    let data_store = test_data_store!([]);
     let service = AlarmTimersServiceImpl::new(data_store);
 
     let delete_request = DeleteRequest {
@@ -144,7 +104,7 @@ async fn test_delete_timer() {
 
 #[tokio::test]
 async fn test_update_timer() {
-    let data_store = TestDataStore::<TestRow> { data: vec![] };
+    let data_store = test_data_store!([]);
     let service = AlarmTimersServiceImpl::new(data_store);
     let test_time = utils::datetime_to_timestamp(Utc::now());
     let alarm_timer = AlarmTimer {
